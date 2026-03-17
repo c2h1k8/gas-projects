@@ -1,13 +1,13 @@
 #!/bin/bash
 # 共通ファイルを使用するプロジェクトにコピーする
 #
-# 新しいプロジェクトを追加したら copy_project_files 関数の呼び出しを追記する
-#   書式: copy_project_files <プロジェクト名> <共通ディレクトリ1> [共通ディレクトリ2 ...]
+# 全ファイルコピー: copy_dir  <プロジェクト名> <共通ディレクトリ1> [共通ディレクトリ2 ...]
+# 個別ファイル指定: copy_files <プロジェクト名> <共通ディレクトリ> <ファイル1> [ファイル2 ...]
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-copy_project_files() {
+copy_dir() {
   local project="$1"
   shift
   local dest="$ROOT_DIR/$project"
@@ -22,7 +22,22 @@ copy_project_files() {
   done
 }
 
+copy_files() {
+  local project="$1"
+  local src_dir="$2"
+  shift 2
+  local dest="$ROOT_DIR/$project"
+  local src="$ROOT_DIR/$src_dir"
+
+  for filename in "$@"; do
+    cp "$src/$filename" "$dest/$filename"
+    echo "Copied $src_dir/$filename → $project/"
+  done
+}
+
 # プロジェクトごとのコピー設定
-copy_project_files "household-account" "common" "notion-common"
+copy_dir   "household-account"   "common" "notion-common"
+copy_files "notion-checked-time" "common"       "CoreUtils.js" "Props.js"
+copy_files "notion-checked-time" "notion-common" "NotionApi.js" "NotionPayload.js"
 
 echo "Done."

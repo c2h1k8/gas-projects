@@ -12,13 +12,11 @@ const mapChildrenToJson_ = (children) => children.map(obj => obj.toJson());
 
 const buildRichText_ = (text) => [{ 'text': { 'content': text } }];
 
-const buildRichTextBlock_ = (text) => [{ 'type': 'text', 'text': { 'content': text, 'link': null } }];
-
 // ---- ページ・フィルター ----
 
 class NotionPage {
-  constructor(dabaSourceId, propertyItems = new Map(), icon = '', children = []) {
-    this.dabaSourceId = dabaSourceId;
+  constructor(dataSourceId, propertyItems = new Map(), icon = '', children = []) {
+    this.dataSourceId = dataSourceId;
     this.icon = icon;
     this.propertyItems = propertyItems;
     this.children = children;
@@ -29,8 +27,8 @@ class NotionPage {
       'properties': {},
       'children': mapChildrenToJson_(this.children),
     };
-    if (this.dabaSourceId) {
-      json.parent = { 'data_source_id': this.dabaSourceId };
+    if (this.dataSourceId) {
+      json.parent = { 'data_source_id': this.dataSourceId };
     }
     if (this.icon) {
       json.icon = { 'type': 'emoji', 'emoji': this.icon };
@@ -44,7 +42,7 @@ class NotionPage {
 }
 
 class NotionFilter {
-  constructor(filterItem, sortMap, condition = 'and') {
+  constructor(filterItem, sortMap = null, condition = 'and') {
     this.condition = condition;
     this.filterItem = filterItem;
     this.sortMap = sortMap;
@@ -182,43 +180,28 @@ class NotionPropRelation {
 // ---- ブロック基底クラス ----
 
 class NotionBlockItem_ {
-  constructor(type, text = '', color = 'default') {
+  constructor(type, text = '', color = 'default', children = []) {
     this.type = type;
     this.text = text;
     this.color = color;
+    this.children = children;
   }
 
   toJson() {
-    return {
-      'type': this.type,
-      [this.type]: {
-        'rich_text': buildRichTextBlock_(this.text),
-        'color': this.color,
-      },
+    const block = {
+      'rich_text': buildRichText_(this.text),
+      'color': this.color,
     };
+    if (this.children.length) block.children = mapChildrenToJson_(this.children);
+    return { 'type': this.type, [this.type]: block };
   }
 }
 
 // ---- ブロッククラス ----
 
-class NotionHeading {
+class NotionHeading extends NotionBlockItem_ {
   constructor(type, text = '', blockColor = 'default', children = []) {
-    this.type = type;
-    this.text = text;
-    this.blockColor = blockColor;
-    this.children = children;
-  }
-
-  toJson() {
-    const h = `heading_${this.type}`;
-    return {
-      'type': h,
-      [h]: {
-        'rich_text': buildRichText_(this.text),
-        'color': this.blockColor,
-        'children': mapChildrenToJson_(this.children),
-      },
-    };
+    super(`heading_${type}`, text, blockColor, children);
   }
 }
 

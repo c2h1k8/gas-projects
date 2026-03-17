@@ -1,6 +1,11 @@
 .clasp.json
 node_modules/
 household-account/823_properties.js
+notion-checked-time/properties.js
+notion-checked-time/CoreUtils.js
+notion-checked-time/Props.js
+notion-checked-time/NotionApi.js
+notion-checked-time/NotionPayload.js
 household-account/NotionPayload.js
 household-account/NotionApi.js
 household-account/Loading.html

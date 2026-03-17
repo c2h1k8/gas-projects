@@ -123,10 +123,7 @@ const NotionApi = (function () {
      * @returns {string} ページID
      */
     getPageIdFromTitle: (dataSourceId, { TITLE }, value) => {
-      const filterItems = [
-        new NotionFilterItem(TITLE, 'title', 'equals', value),
-      ];
-      const resultQuery = getPages_(dataSourceId, new NotionFilter(filterItems));
+      const resultQuery = getPages_(dataSourceId, new NotionFilter([new NotionFilterItem(TITLE, 'title', 'equals', value)]));
       return resultQuery[0]?.id || '';
     },
     /**
