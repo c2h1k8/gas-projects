@@ -1,0 +1,28 @@
+{
+  "timeZone": "Asia/Tokyo",
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "dependencies": {
+    "libraries": [
+      {
+        "userSymbol": "DateUtils",
+        "libraryId": "1Atiputc7VmSCbwEnGgaiD_0ZgnjBo-IuT-MHQh-DV_-0A0vLG5AneE1o",
+        "version": "6"
+      },
+      {
+        "userSymbol": "LineUtil",
+        "libraryId": "1AGlk4JQPDNGOxKfJqyVOwWlH6M6TGm0fDxplKXdo5p8DMsQOzXCf5sYS",
+        "version": "7"
+      },
+      {
+        "userSymbol": "Utils",
+        "libraryId": "1l4IcudtmOLF6PE5XogwV_5F7VdAd1RT0IwvB_CGaD32ooUgKlFjViCj3",
+        "version": "7"
+      }
+    ]
+  },
+  "webapp": {
+    "executeAs": "USER_DEPLOYING",
+    "access": "MYSELF"
+  }
+}

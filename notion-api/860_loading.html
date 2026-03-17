@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root{
+        --bg1:#0b1220;
+        --bg2:#0f1b33;
+        --fg:#d7e3ff;
+        --muted:#93a4c7;
+        --ring1:#35d6ff;
+        --ring2:#c77dff;
+        --ring3:#ffe66d;
+        --ok:#35f28c;
+      }
+
+      html,body{
+        height:100%;
+        margin:0;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, Arial, sans-serif;
+        background: radial-gradient(1200px 800px at 30% 20%, rgba(53,214,255,.18), transparent 60%),
+                    radial-gradient(900px 600px at 75% 65%, rgba(199,125,255,.16), transparent 55%),
+                    linear-gradient(180deg, var(--bg1), var(--bg2));
+        color:var(--fg);
+        overflow:hidden;
+      }
+
+      .wrap{
+        height:100%;
+        display:grid;
+        place-items:center;
+      }
+
+      .card{
+        width:min(420px, 92vw);
+        aspect-ratio: 1 / 1;
+        border-radius: 24px;
+        position:relative;
+        background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+        border: 1px solid rgba(255,255,255,.10);
+        box-shadow:
+          0 24px 60px rgba(0,0,0,.35),
+          inset 0 1px 0 rgba(255,255,255,.10);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        display:grid;
+        place-items:center;
+      }
+
+      .hint{
+        position:absolute;
+        bottom:18px;
+        left:18px;
+        right:18px;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:12px;
+        font-size:12px;
+        color: rgba(215,227,255,.75);
+      }
+
+      .pill{
+        padding:6px 10px;
+        border-radius:999px;
+        background: rgba(255,255,255,.06);
+        border:1px solid rgba(255,255,255,.10);
+        color: rgba(215,227,255,.85);
+        display:flex;
+        align-items:center;
+        gap:8px;
+        white-space:nowrap;
+      }
+
+      .dot{
+        width:8px;height:8px;border-radius:999px;
+        background: rgba(147,164,199,.9);
+        box-shadow: 0 0 0 4px rgba(147,164,199,.18);
+        animation: pulse 1.3s ease-in-out infinite;
+      }
+
+      @keyframes pulse{
+        0%,100%{ transform: scale(.9); opacity:.7; }
+        50%{ transform: scale(1.15); opacity:1; }
+      }
+
+      /* Reduced motion */
+      @media (prefers-reduced-motion: reduce){
+        *{ animation: none !important; transition:none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card" role="status" aria-live="polite" aria-label="Loading">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360" width="88%" height="88%">
+          <defs>
+            <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feColorMatrix in="blur" type="matrix"
+                values="1 0 0 0 0
+                        0 1 0 0 0
+                        0 0 1 0 0
+                        0 0 0 .75 0" result="glow"/>
+              <feMerge>
+                <feMergeNode in="glow"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+
+            <linearGradient id="g1" x1="0" x2="1">
+              <stop offset="0" stop-color="var(--ring1)" stop-opacity=".9"/>
+              <stop offset="1" stop-color="var(--ring2)" stop-opacity=".9"/>
+            </linearGradient>
+            <linearGradient id="g2" x1="1" x2="0">
+              <stop offset="0" stop-color="var(--ring2)" stop-opacity=".9"/>
+              <stop offset="1" stop-color="var(--ring3)" stop-opacity=".9"/>
+            </linearGradient>
+            <linearGradient id="g3" x1="0" x2="1">
+              <stop offset="0" stop-color="var(--ring3)" stop-opacity=".9"/>
+              <stop offset="1" stop-color="var(--ring1)" stop-opacity=".9"/>
+            </linearGradient>
+
+            <style>
+              .ring{
+                fill:none;
+                stroke-width:7;
+                stroke-linecap:round;
+                opacity:.9;
+                filter:url(#softGlow);
+                stroke-dasharray: 40 22;
+                animation: dash 1.4s linear infinite;
+                transform-origin: 180px 180px;
+              }
+              .ring.r1{ stroke:url(#g1); animation-delay: 0s; }
+              .ring.r2{ stroke:url(#g2); animation-delay: -.35s; }
+              .ring.r3{ stroke:url(#g3); animation-delay: -.7s; }
+
+              @keyframes dash{
+                from{ stroke-dashoffset: 0; transform: rotate(0deg) scale(.92); }
+                to  { stroke-dashoffset: -124; transform: rotate(360deg) scale(.92); }
+              }
+
+              .label{
+                font-size: 26px;
+                fill: rgba(215,227,255,.92);
+                letter-spacing: .06em;
+              }
+              .sub{
+                font-size: 13px;
+                fill: rgba(147,164,199,.9);
+                letter-spacing: .12em;
+              }
+
+              /* animated dots */
+              .dots tspan{
+                opacity: 0;
+                animation: dot 1.2s infinite;
+              }
+              .dots tspan:nth-child(1){ animation-delay: 0s; }
+              .dots tspan:nth-child(2){ animation-delay: .2s; }
+              .dots tspan:nth-child(3){ animation-delay: .4s; }
+
+              @keyframes dot{
+                0%,20%{ opacity:0; }
+                30%,80%{ opacity:1; }
+                100%{ opacity:0; }
+              }
+
+              /* complete state */
+              .completeGroup{ opacity:0; transform: scale(.98); transform-origin:180px 180px; transition: opacity .35s ease, transform .35s ease; }
+              .loadingGroup{ opacity:1; transition: opacity .25s ease; }
+
+              .isComplete .loadingGroup{ opacity:0; }
+              .isComplete .completeGroup{ opacity:1; transform: scale(1); }
+
+              .check{
+                fill:none;
+                stroke: var(--ok);
+                stroke-width:10;
+                stroke-linecap:round;
+                stroke-linejoin:round;
+                filter:url(#softGlow);
+                stroke-dasharray: 120;
+                stroke-dashoffset: 120;
+                animation: draw .55s ease forwards;
+                animation-delay: .08s;
+              }
+
+              @keyframes draw{
+                to{ stroke-dashoffset: 0; }
+              }
+
+              .okText{
+                font-size: 22px;
+                fill: rgba(215,227,255,.95);
+                letter-spacing: .06em;
+              }
+              .okSub{
+                font-size: 12px;
+                fill: rgba(147,164,199,.95);
+                letter-spacing: .12em;
+              }
+            </style>
+          </defs>
+
+          <!-- Rings -->
+          <g class="loadingGroup">
+            <ellipse class="ring r1" cx="180" cy="180" rx="128" ry="144"/>
+            <ellipse class="ring r2" cx="180" cy="180" rx="144" ry="128" transform="rotate(-28 180 180)"/>
+            <ellipse class="ring r3" cx="180" cy="180" rx="128" ry="144" transform="rotate(-56 180 180)"/>
+
+            <!-- Center text -->
+            <text x="180" y="185" text-anchor="middle" class="label">
+              Loading<tspan class="dots"><tspan>.</tspan><tspan>.</tspan><tspan>.</tspan></tspan>
+            </text>
+            <text x="180" y="212" text-anchor="middle" class="sub">PLEASE WAIT</text>
+          </g>
+
+          <!-- Complete -->
+          <g class="completeGroup">
+            <circle cx="180" cy="150" r="48" fill="rgba(53,242,140,.10)" stroke="rgba(53,242,140,.35)" stroke-width="2"/>
+            <path class="check" d="M158 150 L175 167 L206 134"/>
+            <text x="180" y="235" text-anchor="middle" class="okText">Done</text>
+            <text x="180" y="258" text-anchor="middle" class="okSub">COMPLETED</text>
+          </g>
+        </svg>
+
+        <div class="hint">
+          <div class="pill"><span class="dot"></span><span id="hintText">処理中…</span></div>
+          <div class="pill" id="timer">00:00</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+
+        // ===== 既存UI制御 =====
+        const card = document.querySelector('.card');
+        const hintText = document.getElementById('hintText');
+        const timer = document.getElementById('timer');
+
+        let start = Date.now();
+        let timerInterval = setInterval(() => {
+          const sec = Math.floor((Date.now() - start) / 1000);
+          const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+          const ss = String(sec % 60).padStart(2, '0');
+          timer.textContent = mm + ':' + ss;
+        }, 250);
+
+        const setHint = (text) => {
+          if (text) hintText.textContent = text;
+        };
+
+        const complete = (text) => {
+          card.classList.add('isComplete');
+          setHint(text || '完了しました');
+          clearInterval(timerInterval);
+        };
+
+        // 外部公開（念のため残す）
+        window.LOADING_UI = { complete, setHint };
+
+        // ===== GASと連携（自動状態取得） =====
+
+        const applyState = (state) => {
+          if (!state) return;
+
+          if (state.hint) {
+            setHint(state.hint);
+          }
+
+          if (state.status === 'complete') {
+            complete(state.hint || '完了しました');
+            setTimeout(() => google.script.host.close(), 900);
+          }
+
+          if (state.status === 'error') {
+            complete(state.hint || 'エラーが発生しました');
+            setTimeout(() => google.script.host.close(), 1400);
+          }
+        };
+
+        const poll = () => {
+          if (typeof google === 'undefined' || !google.script) return;
+
+          google.script.run
+            .withSuccessHandler(applyState)
+            .LoadingUi_getStateForClient();
+        };
+
+        // 初回＋定期取得
+        poll();
+        setInterval(poll, 400);
+
+      })();
+    </script>
+  </body>
+</html>
