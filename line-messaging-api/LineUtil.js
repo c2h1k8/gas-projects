@@ -1,33 +1,33 @@
+const IMAGE_BACKGROUND_COLOR = '#ffffff';
+
 /**
  * テキストメッセージを送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#text-message
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param replyToken リプライトークン
  * @param message メッセージ
  * @param emojis メッセージ用絵文字配列
  * @return HTTPレスポンスデータ
  */
 function replyText(token, replyToken, message, emojis = []) {
-  const postData = getTextData(message, emojis);
-  return reply(token, replyToken, postData);
+  return reply(token, replyToken, getTextData(message, emojis));
 }
 /**
  * テキストメッセージを送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#text-message
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param userId ユーザID
  * @param message メッセージ
  * @param emojis メッセージ用絵文字配列
  * @return HTTPレスポンスデータ
  */
 function postText(token, userId, message, emojis = []) {
-  const postData = getTextData(message, emojis);
-  return push(token, userId, postData);
+  return push(token, userId, getTextData(message, emojis));
 }
 /**
  * テキストメッセージ（クイックリプライあり）を送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#text-message
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param replyToken リプライトークン
  * @param message メッセージ
  * @param actions クイックリプライアクション配列
@@ -35,13 +35,12 @@ function postText(token, userId, message, emojis = []) {
  * @return HTTPレスポンスデータ
  */
 function replyQuickText(token, replyToken, message, actions, emojis = []) {
-  const postData = getTextData(message, emojis, actions);
-  return reply(token, replyToken, postData);
+  return reply(token, replyToken, getTextData(message, emojis, actions));
 }
 /**
  * テキストメッセージ（クイックリプライあり）を送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#text-message
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param userId ユーザID
  * @param message メッセージ
  * @param actions クイックリプライアクション配列
@@ -49,8 +48,7 @@ function replyQuickText(token, replyToken, message, actions, emojis = []) {
  * @return HTTPレスポンスデータ
  */
 function postQuickText(token, userId, message, actions, emojis = []) {
-  const postData = getTextData(message, emojis, actions);
-  return push(token, userId, postData);
+  return push(token, userId, getTextData(message, emojis, actions));
 }
 /**
  * 送信するテキストメッセージデータを生成します。
@@ -59,17 +57,16 @@ function postQuickText(token, userId, message, actions, emojis = []) {
  * @param actions クイックリプライアクション配列
  * @return メッセージデータ
  */
-const getTextData = (message, emojis, actions = []) => {
+function getTextData(message, emojis, actions = []) {
   message = getMessage(message);
   const postData = {
-    "messages" : [
+    'messages': [
       {
-        'type':'text',
+        'type': 'text',
         'text': message,
       }
     ]
   };
-  
   if (!Array.isArray(emojis)) {
     if (emojis == null) {
       emojis = [];
@@ -91,28 +88,26 @@ const getTextData = (message, emojis, actions = []) => {
 /**
  * スタンプメッセージを送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#sticker-message
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param replyToken リプライトークン
  * @param packageId スタンプセットのパッケージID
  * @param stickerId スタンプID
  * @return HTTPレスポンスデータ
  */
 function replyStamp(token, replyToken, packageId, stickerId) {
-  const postData = getStampData(packageId, stickerId);
-  return reply(token, replyToken, postData);
+  return reply(token, replyToken, getStampData(packageId, stickerId));
 }
 /**
  * スタンプメッセージを送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#sticker-message
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param userId ユーザID
  * @param packageId スタンプセットのパッケージID
  * @param stickerId スタンプID
  * @return HTTPレスポンスデータ
  */
 function postStamp(token, userId, packageId, stickerId) {
-  const postData = getStampData(packageId, stickerId);
-  return push(token, userId, postData);
+  return push(token, userId, getStampData(packageId, stickerId));
 }
 /**
  * 送信するスタンプメッセージデータを生成します。
@@ -120,9 +115,9 @@ function postStamp(token, userId, packageId, stickerId) {
  * @param stickerId スタンプID
  * @return メッセージデータ
  */
-const getStampData = (packageId, stickerId) => {
+function getStampData(packageId, stickerId) {
   return {
-    'messages' : [
+    'messages': [
       {
         'type': 'sticker',
         'packageId': packageId,
@@ -135,7 +130,7 @@ const getStampData = (packageId, stickerId) => {
 /**
  * 確認テンプレートメッセージを送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#template-messages
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param replyToken リプライトークン
  * @param altText 代替テキスト
  * @param text メッセージテキスト
@@ -143,13 +138,12 @@ const getStampData = (packageId, stickerId) => {
  * @return HTTPレスポンスデータ
  */
 function replyConfirm(token, replyToken, altText, text, actions) {
-  const postData = getConfirmData(altText, text, actions);
-  return reply(token, replyToken, postData);
+  return reply(token, replyToken, getConfirmData(altText, text, actions));
 }
 /**
  * 確認テンプレートメッセージを送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#template-messages
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param userId ユーザID
  * @param altText 代替テキスト
  * @param text メッセージテキスト
@@ -157,8 +151,7 @@ function replyConfirm(token, replyToken, altText, text, actions) {
  * @return HTTPレスポンスデータ
  */
 function postConfirm(token, userId, altText, text, actions) {
-  const postData = getConfirmData(altText, text, actions);
-  return push(token, userId, postData);
+  return push(token, userId, getConfirmData(altText, text, actions));
 }
 /**
  * 送信する確認テンプレートメッセージデータを生成します。
@@ -167,13 +160,13 @@ function postConfirm(token, userId, altText, text, actions) {
  * @param actions アクションオブジェクト配列（最大アクション数：2）
  * @return メッセージデータ
  */
-const getConfirmData = (altText, text, actions) => {
+function getConfirmData(altText, text, actions) {
   return {
     'messages': [
       {
         'type': 'template',
         'altText': altText,
-        'template' : {
+        'template': {
           'type': 'confirm',
           'text': text,
           'actions': actions
@@ -186,7 +179,7 @@ const getConfirmData = (altText, text, actions) => {
 /**
  * ボタンテンプレートメッセージを送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#buttons
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param replyToken リプライトークン
  * @param altText 代替テキスト
  * @param thumbnailImageUrl 画像URL
@@ -196,13 +189,12 @@ const getConfirmData = (altText, text, actions) => {
  * @return HTTPレスポンスデータ
  */
 function replyButton(token, replyToken, altText, thumbnailImageUrl, title, text, actions) {
-  const postData = getButtonData(altText, thumbnailImageUrl, title, text, actions);
-  return reply(token, replyToken, postData);
+  return reply(token, replyToken, getButtonData(altText, thumbnailImageUrl, title, text, actions));
 }
 /**
  * ボタンテンプレートメッセージを送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#buttons
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param userId ユーザID
  * @param altText 代替テキスト
  * @param thumbnailImageUrl 画像URL
@@ -212,8 +204,7 @@ function replyButton(token, replyToken, altText, thumbnailImageUrl, title, text,
  * @return HTTPレスポンスデータ
  */
 function postButton(token, userId, altText, thumbnailImageUrl, title, text, actions) {
-  const postData = getButtonData(altText, thumbnailImageUrl, title, text, actions);
-  return push(token, userId, postData);
+  return push(token, userId, getButtonData(altText, thumbnailImageUrl, title, text, actions));
 }
 /**
  * 送信するボタンテンプレートメッセージデータを生成します。
@@ -224,16 +215,16 @@ function postButton(token, userId, altText, thumbnailImageUrl, title, text, acti
  * @param actions アクションオブジェクト配列（最大アクション数：4）
  * @return メッセージデータ
  */
-const getButtonData = (altText, thumbnailImageUrl, title, text, actions) => {
+function getButtonData(altText, thumbnailImageUrl, title, text, actions) {
   const postData = {
     'messages': [
       {
         'type': 'template',
         'altText': altText,
-        'template' : {
+        'template': {
           'type': 'buttons',
           'thumbnailImageUrl': thumbnailImageUrl,
-          'imageBackgroundColor': '#ffffff',
+          'imageBackgroundColor': IMAGE_BACKGROUND_COLOR,
           'text': text,
           'actions': actions,
         },
@@ -249,28 +240,26 @@ const getButtonData = (altText, thumbnailImageUrl, title, text, actions) => {
 /**
  * カルーセルテンプレートメッセージを送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#carousel
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param replyToken リプライトークン
  * @param altText 代替テキスト
  * @param columns カラムオブジェクト配列（最大カラム数：10）
  * @return HTTPレスポンスデータ
  */
 function replyCarousel(token, replyToken, altText, columns) {
-  const postData = getCarouselData(altText, columns);
-  return reply(token, replyToken, postData);
+  return reply(token, replyToken, getCarouselData(altText, columns));
 }
 /**
  * カルーセルテンプレートメッセージを送信します。
  * https://developers.line.biz/ja/reference/messaging-api/#carousel
- * @param token チェンネルトークン
+ * @param token チャネルトークン
  * @param userId ユーザID
  * @param altText 代替テキスト
  * @param columns カラムオブジェクト配列（最大カラム数：10）
  * @return HTTPレスポンスデータ
  */
 function postCarousel(token, userId, altText, columns) {
-  const postData = getCarouselData(altText, columns);
-  return push(token, userId, postData);
+  return push(token, userId, getCarouselData(altText, columns));
 }
 /**
  * カラムオブジェクトを生成します。
@@ -283,7 +272,7 @@ function postCarousel(token, userId, altText, columns) {
 function getCarouselColumn(thumbnailImageUrl, title, text, actions) {
   const columnData = {
     'thumbnailImageUrl': thumbnailImageUrl,
-    'imageBackgroundColor': '#ffffff',
+    'imageBackgroundColor': IMAGE_BACKGROUND_COLOR,
     'text': text,
     'actions': actions,
   };
@@ -298,13 +287,13 @@ function getCarouselColumn(thumbnailImageUrl, title, text, actions) {
  * @param columns カラムオブジェクト配列（最大カラム数：10）
  * @return メッセージデータ
  */
-const getCarouselData = (altText, columns) => {
+function getCarouselData(altText, columns) {
   return {
     'messages': [
       {
         'type': 'template',
         'altText': altText,
-        'template' : {
+        'template': {
           'type': 'carousel',
           'columns': columns,
         },
@@ -315,6 +304,9 @@ const getCarouselData = (altText, columns) => {
 
 /**
  * 絵文字用JSONを取得します。
+ * @param productId プロダクトID
+ * @param emojiId 絵文字ID
+ * @return 絵文字オブジェクト
  */
 function getEmojiJson(productId, emojiId) {
   return {
@@ -342,46 +334,46 @@ function makeQuickReply(action, imageUrl = '') {
 
 /**
  * メッセージテキストを取得します。
- * @param メッセージオブジェクト
+ * @param msg メッセージオブジェクト
  * @return メッセージテキスト
  */
-const getMessage = (msg) => {
+function getMessage(msg) {
   if (typeof msg === 'string') return msg;
   return msg.join('\n');
 }
 
-const getEmojis = (msg, emojis) => {
-    let idx = 0;
-    for (let i = 0; i < emojis.length; i++) {
-      idx = msg.indexOf('$', idx);
-      emojis[i].index = idx++;
-    }
-    return emojis;
+function getEmojis(msg, emojis) {
+  let idx = 0;
+  for (let i = 0; i < emojis.length; i++) {
+    idx = msg.indexOf('$', idx);
+    if (idx === -1) throw new Error(`絵文字プレースホルダー "$" が不足しています（${i + 1}個目が見つかりません）`);
+    emojis[i].index = idx++;
+  }
+  return emojis;
 }
 
-const reply = (token, replyToken, postData) => {
+function reply(token, replyToken, postData) {
   const url = 'https://api.line.me/v2/bot/message/reply';
   postData.replyToken = replyToken;
   return post(url, token, postData);
 }
 
-
-const push = (token, userId, postData) => {
+function push(token, userId, postData) {
   const url = 'https://api.line.me/v2/bot/message/push';
   postData.to = userId;
   return post(url, token, postData);
 }
 
-const post = (url, token, postData) => {
+function post(url, token, postData) {
   const headers = {
-    'Content-Type' : 'application/json; charset=UTF-8',
+    'Content-Type': 'application/json; charset=UTF-8',
     'Authorization': `Bearer ${token}`,
   };
   const options = {
-    'method' : 'post',
-    'headers' : headers,
-    'payload' : JSON.stringify(postData),
-    'muteHttpExceptions' : true,
+    'method': 'post',
+    'headers': headers,
+    'payload': JSON.stringify(postData),
+    'muteHttpExceptions': true,
   };
   const res = UrlFetchApp.fetch(url, options);
   const code = res.getResponseCode();
