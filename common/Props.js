@@ -4,20 +4,20 @@
 const Props = (function () {
   const scriptProps = PropertiesService.getScriptProperties();
 
-  const _valueCache = new Map();      // 通常キーのキャッシュ
-  const _mapCache = new Map();   // Mapキー専用のキャッシュ
+  const _valueCache = new Map();
+  const _jsonCache = new Map();
 
   const _stringify = (obj) => JSON.stringify(obj, (_, v) => v instanceof Map ? { dataType: "Map", value: [...v] } : v);
 
   const _parse = (obj) => JSON.parse(obj, (_, v) => v?.dataType === "Map" ? new Map(v.value) : v);
 
-  const _loadMapFromStore = (key) => {
-    if (_mapCache.has(key)) return _mapCache.get(key);
+  const _loadJsonFromStore = (key) => {
+    if (_jsonCache.has(key)) return _jsonCache.get(key);
 
     const jsonStr = scriptProps.getProperty(key);
-    const map = jsonStr ? _parse(jsonStr) : new Map();
-    _mapCache.set(key, map);
-    return map;
+    const value = jsonStr ? _parse(jsonStr) : null;
+    _jsonCache.set(key, value);
+    return value;
   }
 
   return {
@@ -44,40 +44,40 @@ const Props = (function () {
       return val;
     },
 
-    /** Map を保存 */
-    setMap: function (key, map) {
-      _mapCache.set(key, map);
-      scriptProps.setProperty(key, _stringify(map));
+    /** JSON シリアライズ可能な値を保存（Map も対応） */
+    setJson: function (key, value) {
+      _jsonCache.set(key, value);
+      scriptProps.setProperty(key, _stringify(value));
     },
 
-    /** Map を取得 */
-    getMap: function (key) {
-      return _loadMapFromStore(key);
+    /** JSON 値を取得 */
+    getJson: function (key) {
+      return _loadJsonFromStore(key);
     },
 
-    /** Map にキーが含まれるかチェック */
-    hasMapEntry: function (key, mapKey) {
-      const map = _loadMapFromStore(key);
-      return map.has(mapKey);
+    /** JSON 値のキーが含まれるかチェック */
+    hasJsonEntry: function (key, entryKey) {
+      const value = _loadJsonFromStore(key);
+      return value instanceof Map ? value.has(entryKey) : false;
     },
 
-    /** Map にキーと値を追加（上書き） */
-    setMapEntry: function (key, mapKey, mapValue) {
-      const map = _loadMapFromStore(key);
-      map.set(mapKey, mapValue);
-      this.setMap(key, map);
+    /** JSON 値にキーと値を追加（Map のみ対応） */
+    setJsonEntry: function (key, entryKey, entryValue) {
+      const value = _loadJsonFromStore(key) || new Map();
+      value.set(entryKey, entryValue);
+      this.setJson(key, value);
     },
 
-    /** Map の特定のキーの値を取得 */
-    getMapEntry: function (key, mapKey) {
-      const map = _loadMapFromStore(key);
-      return map.get(mapKey);
+    /** JSON 値の特定キーの値を取得（Map のみ対応） */
+    getJsonEntry: function (key, entryKey) {
+      const value = _loadJsonFromStore(key);
+      return value instanceof Map ? value.get(entryKey) : undefined;
     },
 
     /** 単一キーの削除 */
     deleteKey: function (key) {
       _valueCache.delete(key);
-      _mapCache.delete(key);
+      _jsonCache.delete(key);
       scriptProps.deleteProperty(key);
     },
 
@@ -89,14 +89,14 @@ const Props = (function () {
     /** すべて削除（キャッシュもクリア） */
     clearAll: function () {
       _valueCache.clear();
-      _mapCache.clear();
+      _jsonCache.clear();
       scriptProps.deleteAllProperties();
     },
 
-     /** キャッシュの再同期（外部変更対応） */
+    /** キャッシュの再同期（外部変更対応） */
     sync: function () {
       _valueCache.clear();
-      _mapCache.clear();
+      _jsonCache.clear();
     },
   };
 })();

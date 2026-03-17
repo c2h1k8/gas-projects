@@ -83,7 +83,7 @@ const MainProcMailAI = (() => {
       shopList
     });
 
-    return CommonGoogle.analyzeByGemini(prompt, Props.getValue(PKeys.GEMINI_API_KEY))
+    return GoogleApi.analyzeByGemini(prompt, Props.getValue(PKeys.GEMINI_API_KEY))
   }
 
   const processMessage =  (message, setting, shopList, msgList) => {
@@ -134,7 +134,7 @@ const MainProcMailAI = (() => {
      */
     create: () => {
       const shopList = SpreadsheetApp.getActiveSpreadsheet().getRangeByName('お店').getValues().flat();
-      const settings = Props.getMap(PKeys.AUTO_REGIST_SETTING_LIST);
+      const settings = Props.getJson(PKeys.AUTO_REGIST_SETTING_LIST);
       
       const msgList = {
         'SUCCESS': [ '家計簿の登録に成功しました。' ],

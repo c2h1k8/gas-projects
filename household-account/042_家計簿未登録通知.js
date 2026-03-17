@@ -61,7 +61,7 @@ const MainProcUnregisterdExpenseNotification = (function () {
         [IDX_COL_DATE, true],
         [IDX_COL_AMOUNT, true],
       ]);
-      CommonUtils.sort(outData, sortMap);
+      CoreUtils.sort(outData, sortMap);
       // メッセージ通知
       pushMessage(outData);
       return true;

@@ -17,14 +17,18 @@ const LoadingUI = (() => {
     }
   };
 
+  const resolveSize = (opts = {}) => ({
+    w: opts.width ?? DEFAULT_SIZE.w,
+    h: opts.height ?? DEFAULT_SIZE.h,
+  });
+
   return {
     open: (hint = '処理中…', opts = {}) => {
-      const w = opts.width ?? DEFAULT_SIZE.w;
-      const h = opts.height ?? DEFAULT_SIZE.h;
+      const { w, h } = resolveSize(opts);
 
       setState({ status: 'loading', hint });
 
-      const html = HtmlService.createHtmlOutputFromFile('Common_Loading')
+      const html = HtmlService.createHtmlOutputFromFile('Loading')
         .setWidth(w)
         .setHeight(h);
 
@@ -49,8 +53,7 @@ const LoadingUI = (() => {
     close: (opts = {}) => {
       CACHE.remove(KEY);
 
-      const w = opts.width ?? DEFAULT_SIZE.w;
-      const h = opts.height ?? DEFAULT_SIZE.h;
+      const { w, h } = resolveSize(opts);
 
       const html = HtmlService.createHtmlOutput(
         '<script>google.script.host.close();</script>'
@@ -78,10 +81,8 @@ function withLoading(fn, opts) {
   LoadingUI.open(startHint);
 
   try {
-    // Apps Scriptのサーバー側は基本同期なので、Promise対応より「同期/非同期どっちでもOK」にしておく
     var result = fn();
 
-    // fnがPromiseを返すケースにも対応
     if (result && typeof result.then === 'function') {
       return result.then(function (v) {
         LoadingUI.complete(successHint);

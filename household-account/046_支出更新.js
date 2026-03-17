@@ -125,7 +125,7 @@ const MainProcUpdate = (function () {
         [ 3, false ], // 日付降順
         [ 4, true ],  // 値段昇順
       ]);
-      CommonUtils.sort(outData, sortMap);
+      CoreUtils.sort(outData, sortMap);
 
       LoadingUI.hint('検索結果をシートに反映しています…');
       // データ出力

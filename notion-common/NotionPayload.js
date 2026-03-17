@@ -1,3 +1,21 @@
+// ---- ヘルパー関数 ----
+
+const toDateString_ = (value) => {
+  switch (Object.prototype.toString.call(value)) {
+    case '[object Date]': return Utilities.formatDate(value, "JST", "yyyy-MM-dd");
+    case '[object String]': return value;
+    default: return null;
+  }
+};
+
+const mapChildrenToJson_ = (children) => children.map(obj => obj.toJson());
+
+const buildRichText_ = (text) => [{ 'text': { 'content': text } }];
+
+const buildRichTextBlock_ = (text) => [{ 'type': 'text', 'text': { 'content': text, 'link': null } }];
+
+// ---- ページ・フィルター ----
+
 class NotionPage {
   constructor(dabaSourceId, propertyItems = new Map(), icon = '', children = []) {
     this.dabaSourceId = dabaSourceId;
@@ -7,22 +25,15 @@ class NotionPage {
   }
 
   toJson() {
-    const childJsons = [];
-    this.children.forEach(obj => {
-      childJsons.push(obj.toJson());
-    });
     const json = {
       'properties': {},
-      'children': childJsons,
+      'children': mapChildrenToJson_(this.children),
     };
     if (this.dabaSourceId) {
       json.parent = { 'data_source_id': this.dabaSourceId };
     }
     if (this.icon) {
-      json.icon = {
-        'type': 'emoji',
-        'emoji': this.icon,
-      }
+      json.icon = { 'type': 'emoji', 'emoji': this.icon };
     }
     for (const [key, value] of this.propertyItems) {
       if (value.isEmpty) continue;
@@ -38,15 +49,13 @@ class NotionFilter {
     this.filterItem = filterItem;
     this.sortMap = sortMap;
   }
+
   toJson() {
     const json = {
       'filter': {
-        [this.condition]: [],
+        [this.condition]: this.filterItem.map(item => item.toJson()),
       },
     };
-    this.filterItem.forEach(item => {
-      json.filter[this.condition].push(item.toJson());
-    })
     if (this.sortMap) {
       json.sorts = [];
       for (const [key, value] of this.sortMap) {
@@ -65,14 +74,7 @@ class NotionFilterItem {
     this.item = item;
     this.type = type;
     this.condition = condition;
-    switch (Object.prototype.toString.call(value)) {
-      case '[object Date]':
-        this.value = Utilities.formatDate(value, "JST", "yyyy-MM-dd");
-        break;
-      default:
-        this.value = value;
-        break;
-    }
+    this.value = toDateString_(value) ?? value;
   }
 
   toJson() {
@@ -81,9 +83,11 @@ class NotionFilterItem {
       [this.type]: {
         [this.condition]: this.value,
       },
-    }
+    };
   }
 }
+
+// ---- プロパティクラス ----
 
 class NotionPropTitle {
   constructor(text = '') {
@@ -92,15 +96,7 @@ class NotionPropTitle {
   }
 
   toJson() {
-    return {
-      'title': [
-        {
-          'text': {
-            'content': this.text,
-          }
-        }
-      ]
-    };
+    return { 'title': buildRichText_(this.text) };
   }
 }
 
@@ -109,16 +105,9 @@ class NotionPropText {
     this.text = text;
     this.isEmpty = !text;
   }
+
   toJson() {
-    return {
-      'rich_text':[
-        {
-          'text':{
-            "content": this.text,
-          },
-        },
-      ]
-    };
+    return { 'rich_text': buildRichText_(this.text) };
   }
 }
 
@@ -129,11 +118,7 @@ class NotionPropSelect {
   }
 
   toJson() {
-    return {
-      'select': {
-        'name': this.text,
-      }
-    };
+    return { 'select': { 'name': this.text } };
   }
 }
 
@@ -144,9 +129,7 @@ class NotionPropNumber {
   }
 
   toJson() {
-    return {
-      'number': this.num,
-    };
+    return { 'number': this.num };
   }
 }
 
@@ -157,9 +140,7 @@ class NotionPropUrl {
   }
 
   toJson() {
-    return {
-      'url': this.url,
-    };
+    return { 'url': this.url };
   }
 }
 
@@ -169,36 +150,20 @@ class NotionPropCheckBox {
   }
 
   toJson() {
-    return {
-      'checkbox': this.check,
-    };
+    return { 'checkbox': this.check };
   }
 }
 
 class NotionPropDate {
   constructor(start = null, useTimeZone = true, end = null) {
-    switch (Object.prototype.toString.call(start)) {
-      case '[object Date]':
-        this.start = Utilities.formatDate(start, "JST", "yyyy-MM-dd");
-        break;
-      case '[object String]':
-        this.start = start;
-        break;
-    }
+    this.start = toDateString_(start);
+    this.end = toDateString_(end);
     this.useTimeZone = useTimeZone;
-    switch (Object.prototype.toString.call(end)) {
-      case '[object Date]':
-        this.end = Utilities.formatDate(end, "JST", "yyyy-MM-dd");
-        break;
-      case '[object String]':
-        this.end = end;
-        break;
-    }
     this.isEmpty = !start;
   }
 
   toJson() {
-    const json =  {
+    const json = {
       'type': 'date',
       'date': {
         'start': this.start,
@@ -222,15 +187,13 @@ class NotionPropRelation {
   }
 
   toJson() {
-    const json = {
-      'relation': [],
-    }
-    for (const id of this.ids) {
-      json.relation.push({'id': id});
-    }
-    return json;
+    return {
+      'relation': this.ids.map(id => ({ 'id': id })),
+    };
   }
 }
+
+// ---- ブロッククラス ----
 
 class NotionHeading {
   constructor(type, text = '', blockColor = 'default', children = []) {
@@ -241,23 +204,13 @@ class NotionHeading {
   }
 
   toJson() {
-    const childJsons = [];
-    this.children.forEach(obj => {
-      childJsons.push(obj.toJson());
-    });
     const h = `heading_${this.type}`;
     return {
       'type': h,
       [h]: {
-        'rich_text': [
-        {
-          'text': {
-            'content': this.text,
-          }
-        }
-      ],
-      'color': this.blockColor,
-      'children': childJsons,
+        'rich_text': buildRichText_(this.text),
+        'color': this.blockColor,
+        'children': mapChildrenToJson_(this.children),
       },
     };
   }
@@ -271,17 +224,12 @@ class NotionCheckBox {
 
   toJson() {
     return {
-      "type": "to_do",
-      "to_do": {
-        "rich_text": [{
-          "type": "text",
-          "text": {
-            "content": this.text,
-          }
-        }],
+      'type': 'to_do',
+      'to_do': {
+        'rich_text': buildRichTextBlock_(this.text),
         'color': this.blockColor,
       }
-    }
+    };
   }
 }
 
@@ -295,16 +243,10 @@ class NotionBulletedList {
     return {
       'type': 'bulleted_list_item',
       'bulleted_list_item': {
-        'rich_text': [{
-          'type': 'text',
-          'text': {
-            'content': this.text,
-            'link': null
-          }
-        }],
+        'rich_text': buildRichTextBlock_(this.text),
         'color': this.textColor,
       }
-    }
+    };
   }
 }
 
@@ -318,15 +260,9 @@ class NotionParagraph {
     return {
       'type': 'paragraph',
       'paragraph': {
-        'rich_text': [{
-          'type': 'text',
-          'text': {
-            'content': this.text,
-            'link': null
-          }
-        }],
+        'rich_text': buildRichTextBlock_(this.text),
         'color': this.textColor,
       }
-    }
+    };
   }
 }

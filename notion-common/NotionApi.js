@@ -1,12 +1,9 @@
 const NotionApi = (function () {
-  // プロパティ情報
-  const props = PropertiesService.getScriptProperties().getProperties();
-
-  const headers = {
+  const getHeaders = () => ({
     'Content-type': 'application/json',
-    'Authorization': `Bearer ${props.NOTION_TOKEN}`,
-    'Notion-Version': props.NOTION_VERSION,
-  };
+    'Authorization': `Bearer ${Props.getValue('NOTION_TOKEN')}`,
+    'Notion-Version': Props.getValue('NOTION_VERSION'),
+  });
 
   const fetch = (url, options, needsLog) => {
     try {
@@ -20,18 +17,23 @@ const NotionApi = (function () {
     }
   }
 
+  const buildOptions = (method, payload = null) => {
+    const options = {
+      'method': method,
+      'headers': getHeaders(),
+      'muteHttpExceptions': true,
+    };
+    if (payload !== null) options.payload = JSON.stringify(payload);
+    return options;
+  };
+
   /**
    * DB列情報を取得する
    * https://developers.notion.com/reference/retrieve-a-data-source
    */
   const getDatabaseColumnQuery = (dataSourceId, needsLog) => {
-    const url = `https://api.notion.com/v1/data_sources/${dataSourceId}`
-    const options = {
-      'method' : 'GET',
-      'headers': headers,
-      'muteHttpExceptions' : true,
-    };
-    return fetch(url, options, needsLog);
+    const url = `https://api.notion.com/v1/data_sources/${dataSourceId}`;
+    return fetch(url, buildOptions('GET'), needsLog);
   }
 
   /**
@@ -39,24 +41,13 @@ const NotionApi = (function () {
    * https://developers.notion.com/reference/query-a-data-source
    */
   const getDatabaseQuery = (dataSourceId, payload, needsLog) => {
-    const url = `https://api.notion.com/v1/data_sources/${dataSourceId}/query`
-    const options = {
-      'method' : 'POST',
-      'headers': headers,
-      'payload': JSON.stringify(payload),
-      'muteHttpExceptions' : true,
-    };
-    return fetch(url, options, needsLog);
+    const url = `https://api.notion.com/v1/data_sources/${dataSourceId}/query`;
+    return fetch(url, buildOptions('POST', payload), needsLog);
   }
 
   const getPageFromId_ = (pageId, needsLog = false) => {
-    const url = `https://api.notion.com/v1/pages/${pageId}`
-    const options = {
-      'method': 'GET',
-      'headers': headers,
-      'muteHttpExceptions' : true,
-    };
-    return fetch(url, options, needsLog);
+    const url = `https://api.notion.com/v1/pages/${pageId}`;
+    return fetch(url, buildOptions('GET'), needsLog);
   };
 
   const getPages_ = (dataSourceId, filter, needsLog = false, limit = 100) => {
@@ -71,7 +62,7 @@ const NotionApi = (function () {
       const resultQuery = getDatabaseQuery(dataSourceId, payload, needsLog);
       hasMore = resultQuery.has_more;
       startCursor = resultQuery.next_cursor;
-      resultArray = resultArray.concat(resultQuery.results)
+      resultArray = resultArray.concat(resultQuery.results);
     }
     return resultArray;
   };
@@ -83,45 +74,25 @@ const NotionApi = (function () {
      */
     createPage: (page, needsLog = false) => {
       const url = 'https://api.notion.com/v1/pages';
-      const options = {
-        'method' : 'POST',
-        'headers': headers,
-        'payload': JSON.stringify(page.toJson()),
-        'muteHttpExceptions' : true,
-      };
-      return fetch(url, options, needsLog);
+      return fetch(url, buildOptions('POST', page.toJson()), needsLog);
     },
     /**
      * ページの内容を更新する
      * https://developers.notion.com/reference/patch-page
      */
     updatePage: (pageId, page, needsLog = false) => {
-      let payload = page.toJson();
+      const payload = page.toJson();
       delete payload.children;
-      const url = `https://api.notion.com/v1/pages/${pageId}`
-      const options = {
-        'method' : 'PATCH',
-        'headers': headers,
-        'payload': JSON.stringify(payload),
-        'muteHttpExceptions' : true,
-      };
-      return fetch(url, options, needsLog);
+      const url = `https://api.notion.com/v1/pages/${pageId}`;
+      return fetch(url, buildOptions('PATCH', payload), needsLog);
     },
     /**
      * ページを削除する
      * https://developers.notion.com/reference/archive-a-page
      */
     deletePage: (pageId, needsLog = false) => {
-      const url = `https://api.notion.com/v1/pages/${pageId}`
-      const options = {
-        'method' : 'PATCH',
-        'headers': headers,
-        'payload': JSON.stringify({
-          'archived': true,
-        }),
-        'muteHttpExceptions' : true,
-      };
-      return fetch(url, options, needsLog);
+      const url = `https://api.notion.com/v1/pages/${pageId}`;
+      return fetch(url, buildOptions('PATCH', { archived: true }), needsLog);
     },
     /**
      * DBから指定条件に合うものを取得する
@@ -163,8 +134,8 @@ const NotionApi = (function () {
      */
     getDbColumns: (dataSourceId, columns, needsLog = false) => {
       const resultQuery = getDatabaseColumnQuery(dataSourceId, needsLog);
-      const columnArr = Array.isArray(columns) ? columns : [ columns ];
-      return new Map(columnArr.map(col => [ col, resultQuery.properties[col] ]));
+      const columnArr = Array.isArray(columns) ? columns : [columns];
+      return new Map(columnArr.map(col => [col, resultQuery.properties[col]]));
     },
   };
 })();

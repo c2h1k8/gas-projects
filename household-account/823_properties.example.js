@@ -16,7 +16,7 @@ function setScriptProps() {
 
   // 家計簿自動登録設定リスト
   const autoRegistSettingList = [];
-  Props.setMap(PKeys.AUTO_REGIST_SETTING_LIST, autoRegistSettingList);
+  Props.setJson(PKeys.AUTO_REGIST_SETTING_LIST, autoRegistSettingList);
 
   // MAIL_AI_ANALYZE_PROMPT は別途設定
   Logger.log(Props.getAllValues());

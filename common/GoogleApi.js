@@ -1,4 +1,4 @@
-const CommonGoogle = (function () {
+const GoogleApi = (function () {
   const safeParseGeminiJson = (text) => {
     if (!text) return null;
 

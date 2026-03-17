@@ -139,7 +139,7 @@ const MainProcIncome = (() => {
     const sortMap = new Map();
     sortMap.set(2, false); // 日付降順
     sortMap.set(3, true); // 金額昇順
-    CommonUtils.sort(rows, sortMap);
+    CoreUtils.sort(rows, sortMap);
   };
 
   const writeRows = (sheet, rows) => {

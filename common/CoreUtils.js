@@ -1,4 +1,4 @@
-const CommonUtils = (function () {
+const CoreUtils = (function () {
   return {
     jsonStringify: (obj) => JSON.stringify(obj, (k, v) => (v instanceof Map ? { dataType: 'Map', value: [...v] } : v)),
     jsonParse: (obj) => {
