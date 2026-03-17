@@ -7,5 +7,6 @@ household-account/Loading.html
 household-account/LoadingUi.js
 household-account/Props.js
 household-account/CoreUtils.js
+household-account/DateUtils.js
 household-account/GoogleApi.js
 .DS_Store
