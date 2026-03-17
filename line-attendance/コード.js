@@ -271,7 +271,6 @@ const MainProc = (function () {
    */
   const postAbsenceTypeSelect = (replyToken, data) => {
     const acitons = [];
-    data.selectingType
     for (const key in ABSENCE_TYPE) {
       data.type = key;
       const label = ABSENCE_TYPE[key].LABEL;
@@ -495,7 +494,7 @@ const MainProc = (function () {
     sheet.getRange(rowNo, COLUMN_META.TYPE.NO).setValue(type);
     sheet.getRange(rowNo, COLUMN_META.START.NO).setValue(start);
     sheet.getRange(rowNo, COLUMN_META.END.NO).setValue(end);
-    diff = getTime(sheet.getRange(rowNo, COLUMN_META.DIFF.NO).getValue());
+    const diff = getTime(sheet.getRange(rowNo, COLUMN_META.DIFF.NO).getValue());
     const msg = [];
     msg.push(`日付: ${DateUtils.formatDate(date, "yyyy-MM-dd")}`);
     msg.push(`勤怠区分: ${type}`)
@@ -724,13 +723,34 @@ const MainProc = (function () {
   };
 
   /**
+   * テキスト形式の勤怠連絡を行います。
+   * 入力形式: [休|客先休] yyyymmdd [yyyymmdd] [本文]
+   * @param replyToken リプライトークン
+   * @param parts 入力テキストをスペース分割した配列
+   */
+  const sendMailRest = (replyToken, parts) => {
+    const typeMap = { '休': 'REST', '客先休': 'WORK_REST' };
+    const type = typeMap[parts[0]];
+    if (!type) {
+      LineManager.reply(replyToken, '$ 連絡種別が不正です。', LineManager.getNgMark());
+      return;
+    }
+    const toDateStr = (s) => `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+    const from = parts[1] ? toDateStr(parts[1]) : DateUtils.formatDate(new Date(), 'yyyy-MM-dd');
+    const hasTo = parts[2] && /^\d{8}$/.test(parts[2]);
+    const to = hasTo ? toDateStr(parts[2]) : null;
+    const text = parts.slice(hasTo ? 3 : 2).join(' ');
+    sendAttendanceNotification(replyToken, { type, from, to, text });
+  };
+
+  /**
    * 勤怠連絡を行います。
    * @param replyToken リプライトークン
    * @param data 入力データ（type: 勤怠連絡種別, from: FROM日付, to: TO日付, text: 本文）
    */
   const sendAttendanceNotification = (replyToken, data) => {
     const subjectList = [];
-    if (!data.type in ABSENCE_TYPE) {
+    if (!(data.type in ABSENCE_TYPE)) {
         LineManager.reply(replyToken, '$ パラメータ不正です。', LineManager.getNgMark()); 
         return;
     }

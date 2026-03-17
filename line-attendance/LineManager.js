@@ -28,6 +28,9 @@ const LineManager = (function () {
         this.postQuick(msg, acitons);
       }
     },
+    replyCarousel: function(replyToken, altText, columns) {
+      LineUtil.replyCarousel(getToken(), replyToken, altText, columns);
+    },
     getBeginnerMark: function() {
       return LineUtil.getEmojiJson('5ac21a18040ab15980c9b43e', '018');
     },
