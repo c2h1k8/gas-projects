@@ -3,6 +3,11 @@ node_modules/
 household-account/823_properties.js
 notion-checked-time/properties.js
 line-attendance/properties.js
+line-attendance/CoreUtils.js
+line-attendance/Props.js
+line-attendance/GoogleApi.js
+line-attendance/LockUtil.js
+line-attendance/DateUtils.js
 notion-checked-time/CoreUtils.js
 notion-checked-time/Props.js
 notion-checked-time/NotionApi.js
@@ -17,4 +22,5 @@ household-account/DateUtils.js
 household-account/GoogleApi.js
 household-account/SpreadUtils.js
 household-account/HtmlUtils.js
+household-account/LockUtil.js
 .DS_Store

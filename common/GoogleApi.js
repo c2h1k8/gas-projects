@@ -51,6 +51,28 @@ const GoogleApi = (function () {
      * @param {Date} [endDate] 終了日
      * @returns {Map} 予定マップ
      */
+    /**
+     * メールを送信する
+     * @param {string|string[]} to 送信先（配列または文字列）
+     * @param {string} subject 件名
+     * @param {string} body 本文
+     * @param {Object} config { from: 送信元アドレス, displayName: 表示名 }
+     * @param {Blob} [attachments] 添付ファイル
+     * @return {boolean} 送信成功: true / 失敗: false
+     */
+    sendEmail: (to, subject, body, { from, displayName }, attachments = null) => {
+      const recipient = Array.isArray(to) ? to.join(',') : to;
+      const options = { from, name: displayName, bcc: from };
+      if (attachments) options.attachments = attachments;
+      try {
+        GmailApp.sendEmail(recipient, subject, body, options);
+        return true;
+      } catch (e) {
+        console.error('メール送信失敗:', e);
+        return false;
+      }
+    },
+
     getCalendarEvents: (calendarId, startDate, endDate = '') => {
       const cal = CalendarApp.getCalendarById(calendarId);
       const events = endDate ? cal.getEvents(startDate, endDate) : cal.getEventsForDay(startDate);

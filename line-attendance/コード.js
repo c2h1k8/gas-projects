@@ -61,6 +61,24 @@ const MainProc = (function () {
     },
   }
 
+  const buildSignature_ = () => [
+    '',
+    '╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋',
+    `╋┿╋┿　　${Props.getValue(PKeys.COMPANY_NAME)}`,
+    `╋┿╋　　　${Props.getValue(PKeys.NAME_LAST)} ${Props.getValue(PKeys.NAME_FIRST)} / ${Props.getValue(PKeys.NAME_ALPHA)}`,
+    `╋┿　　　　${Props.getValue(PKeys.COMPANY_POST_CD)}`,
+    `╋　　　　　${Props.getValue(PKeys.COMPANY_ADDRESS)}`,
+    `╋　　　　　TEL: ${Props.getValue(PKeys.COMPANY_TEL)}`,
+    `╋　　　　　Email: ${Props.getValue(PKeys.ADDRESS_FROM)}`,
+    `╋　　　　　URL: ${Props.getValue(PKeys.COMPANY_URL)}`,
+    '╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋',
+  ].join('\n');
+
+  const getMailConfig_ = () => ({
+    from: Props.getValue(PKeys.ADDRESS_FROM),
+    displayName: `${Props.getValue(PKeys.COMPANY_NAME)} ${Props.getValue(PKeys.NAME_LAST)} ${Props.getValue(PKeys.NAME_FIRST)}`,
+  });
+
   /**
    * 日時から時刻を取得します。
    * @param date 日時
@@ -615,7 +633,7 @@ const MainProc = (function () {
       const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
       let msg; 
       let emoji;
-      if (Props.hasMapEntry(PKeys.FILE_MAP, DateUtils.formatDate(nextDate, 'yyyyMM'))) {
+      if (Props.hasJsonEntry(PKeys.FILE_MAP, DateUtils.formatDate(nextDate, 'yyyyMM'))) {
         // 作成済み
         msg = ['$ 既に作成済みです。'];
         emoji = LineManager.getNgMark()
@@ -702,7 +720,7 @@ const MainProc = (function () {
       `${lastName}`,
     ].join('\n');
 
-    return MailUtil.send(to, subject, body, blob);
+    return GoogleApi.sendEmail(JSON.parse(to), subject, body + buildSignature_(), getMailConfig_(), blob);
   };
 
   /**
@@ -737,7 +755,7 @@ const MainProc = (function () {
     subjectList.push(date)
 
     // メール送信
-    const isSuccess = MailUtil.send(Props.getValue(PKeys.ADDRESS_TO_FOR_REST), subjectList.join(''), body);
+    const isSuccess = GoogleApi.sendEmail(JSON.parse(Props.getValue(PKeys.ADDRESS_TO_FOR_REST)), subjectList.join(''), body + buildSignature_(), getMailConfig_());
     if (isSuccess) {
       LineManager.reply(replyToken, `$ ${absenceType.LABEL}連絡を送信しました。`, LineManager.getHappinessMark());
     } else {
@@ -832,7 +850,7 @@ const MainProc = (function () {
       // セルをクリア
       sheet.getRange(rowNo, COLUMN_META.TYPE.NO, 1, 10).clearContent();
     }
-    Props.setMapEntry(PKeys.FILE_MAP, DateUtils.formatDate(new Date(year, nextMonthIndex, 1), 'yyyyMM'), file.id);
+    Props.setJsonEntry(PKeys.FILE_MAP, DateUtils.formatDate(new Date(year, nextMonthIndex, 1), 'yyyyMM'), file.id);
   }
 
   /**
@@ -841,7 +859,7 @@ const MainProc = (function () {
    * @return ファイル
    */
   const getFile = (date) => {
-    const fileMap = Props.getMap(PKeys.FILE_MAP)
+    const fileMap = Props.getJson(PKeys.FILE_MAP)
     const yearMonth = DateUtils.formatDate(date, 'yyyyMM');
     const id = fileMap.get(yearMonth);
     if (id) {
