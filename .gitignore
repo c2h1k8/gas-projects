@@ -2,6 +2,10 @@
 node_modules/
 notion-api/823_properties.js
 notion-api/NotionCommon_Payload.js
+notion-api/NotionCommon_Api.js
 notion-api/Common_Loading.html
 notion-api/Common_LoadingUi.js
+notion-api/Common_Props.js
+notion-api/Common_Utils.js
+notion-api/Common_Google.js
 .DS_Store

@@ -8,7 +8,7 @@ const Props = (function () {
   const _mapCache = new Map();   // Mapキー専用のキャッシュ
 
   const _stringify = (obj) => JSON.stringify(obj, (_, v) => v instanceof Map ? { dataType: "Map", value: [...v] } : v);
-  
+
   const _parse = (obj) => JSON.parse(obj, (_, v) => v?.dataType === "Map" ? new Map(v.value) : v);
 
   const _loadMapFromStore = (key) => {

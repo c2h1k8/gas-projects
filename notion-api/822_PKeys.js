@@ -23,6 +23,8 @@ const PKeys = {
   GEMINI_API_KEY: 'GEMINI_API_KEY',
   /** メール解析用プロンプト */
   MAIL_AI_ANALYZE_PROMPT: 'MAIL_AI_ANALYZE_PROMPT',
+  /** メール解析用マスク情報（JSON） */
+  MAIL_AI_MASK: 'MAIL_AI_MASK',
 
   /** GitHubトークン */
   GITHUB_TOKEN: 'GITHUB_TOKEN',

@@ -1,15 +1,9 @@
 const MainProcMailAI = (() => {
   const CONFIG = {
     DEBUG: false,
-    MASK: {
-      NAME: "[氏名]",
-      NAME_KANA: "[氏名カナ]",
-      ZIP: "[郵便番号]",
-      ZIP_RAW: "[郵便番号RAW]",
-      ADDRESS: "[住所]",
-      TEL: "[電話番号]",
-      TEL_RAW: "[電話番号RAW]",
-    }
+    get MASK() {
+      return JSON.parse(Props.getValue(PKeys.MAIL_AI_MASK));
+    },
   };
 
   function maskPersonalInfo(text) {
@@ -89,7 +83,7 @@ const MainProcMailAI = (() => {
       shopList
     });
 
-    return LocalUtils.analyzeByGemini(prompt)
+    return CommonGoogle.analyzeByGemini(prompt, Props.getValue(PKeys.GEMINI_API_KEY))
   }
 
   const processMessage =  (message, setting, shopList, msgList) => {
