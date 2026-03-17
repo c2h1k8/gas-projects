@@ -115,7 +115,7 @@ const MainProcMailAI = (() => {
         note: item.note || shopData.note,
       });
 
-      const res = CONFIG.DEBUG ? true : LocalUtils.createPage(page);
+      const res = CONFIG.DEBUG ? true : NotionApi.createPage(page);
       const msg = buildMsgList(date, shopData, amount, setting.METHOD_PAY, item.url, item.note);
       Logger.log(msg);
 

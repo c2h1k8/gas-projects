@@ -13,7 +13,7 @@ const MainProcUnregisterdExpenseNotification = (function () {
       new NotionFilterItem(Constants.PROPERTY_SPENDING.TITLE, 'title', 'ends_with', '自動登録'),
       new NotionFilterItem(Constants.PROPERTY_SPENDING.CHECKED, 'checkbox', 'equals', false),
     ];
-    return LocalUtils.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), new NotionFilter(filterItems));
+    return NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), new NotionFilter(filterItems));
   }
 
   const pushMessage = (outData) => {

@@ -71,7 +71,7 @@ const MainProcUpdate = (function () {
       filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.SHOP, 'select', 'equals', shop));
     }
 
-    const resultArray = LocalUtils.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), new NotionFilter(filterItems));
+    const resultArray = NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), new NotionFilter(filterItems));
     
     Logger.log(`[executeSelect] end: ${Date.now() - start}ms`);
     return resultArray;
@@ -203,13 +203,13 @@ const MainProcUpdate = (function () {
           // 更新
           LoadingUI.hint(` ${rowIndex} 行目を更新しています…`);
           const updateStart = Date.now();
-          LocalUtils.updatePage(id, page, true);
+          NotionApi.updatePage(id, page, true);
           Logger.log(`[update] row ${rowIndex}: updated page in ${Date.now() - updateStart}ms`);
         } else {
           // 登録
           LoadingUI.hint(` ${rowIndex} 行目を新規登録しています…`);
           const createStart = Date.now();
-          LocalUtils.createPage(page);
+          NotionApi.createPage(page);
           Logger.log(`[update] row ${rowIndex}: created new page in ${Date.now() - createStart}ms`);
         }
         Logger.log(`[update] row updated in ${Date.now() - rowStart}ms`);
@@ -233,7 +233,7 @@ const MainProcUpdate = (function () {
       for (const row of values) {
         const [ isUpd, id ] = row;
         if (!isUpd) continue;
-        LocalUtils.deletePage(id);
+        NotionApi.deletePage(id);
       }
       Logger.log(`[delete] end: ${Date.now() - start}ms`);
       return true;

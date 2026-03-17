@@ -119,7 +119,7 @@ const MainProcFixedCost = (function () {
           default:
             continue;
         }
-        const res = LocalUtils.createPage(page);
+        const res = NotionApi.createPage(page);
         if (res) {
           msgList.push(`- ${title} ${amount.toLocaleString()}円`);
         }

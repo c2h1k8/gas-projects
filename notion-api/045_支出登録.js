@@ -54,7 +54,7 @@ const MainProcRegist = (function () {
       }
       // 登録
       for (const [key, value] of pageMap) {
-        const res = LocalUtils.createPage(value);
+        const res = NotionApi.createPage(value);
         Logger.log(res)
         if (res) continue;
         // 登録失敗したものは削除

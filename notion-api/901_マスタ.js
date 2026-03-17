@@ -40,7 +40,7 @@ const MainProcMaster = (() => {
   const getSpendingData = () => {
     const exceptWordTitleSet = new Set(getExceptWordTitleList());
     const resultSet = new Set();
-    const resultArray =  LocalUtils.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING));
+    const resultArray =  NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING));
     for (const result of resultArray) {
       const title = result.properties[Constants.PROPERTY_SPENDING.TITLE].title[0].plain_text;
       if (!exceptWordTitleSet.has(title)) {
@@ -58,7 +58,7 @@ const MainProcMaster = (() => {
    */
   const getIncomeData = () => {
     const resultSet = new Set();
-    const resultArray =  LocalUtils.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_INCOME));
+    const resultArray =  NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_INCOME));
     for (const result of resultArray) {
       const title = result.properties[Constants.PROPERTY_INCOME.TITLE].title[0].plain_text;
       const icon = result['icon'];
@@ -76,7 +76,7 @@ const MainProcMaster = (() => {
   const getSelectOptions = (propertyKey) => {
     const resultList = [];
 
-    const columnMap = LocalUtils.getDbColumns(
+    const columnMap = NotionApi.getDbColumns(
       Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING),
       [propertyKey]
     );
@@ -100,7 +100,7 @@ const MainProcMaster = (() => {
    */
   const getProductData = () => {
     const resultSet = new Set();
-    const resultArray =  LocalUtils.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_ANNUAL_STOCK));
+    const resultArray =  NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_ANNUAL_STOCK));
     for (const result of resultArray) {
       const title = result.properties[Constants.PROPERTY_ANNUAL_STOCK.TITLE].title[0].plain_text;
       resultSet.add(title);

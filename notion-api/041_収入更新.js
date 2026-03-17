@@ -113,7 +113,7 @@ const MainProcIncome = (() => {
 
   const fetchIncomePages = (sheet) => {
     const filter = buildFilterFromSheet(sheet);
-    return LocalUtils.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_INCOME), filter);
+    return NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_INCOME), filter);
   };
 
   // ===== Output helpers =====
@@ -189,9 +189,9 @@ const MainProcIncome = (() => {
     });
     
     if (id) {
-      LocalUtils.updatePage(id, payload);
+      NotionApi.updatePage(id, payload);
     } else {
-      LocalUtils.createPage(payload);
+      NotionApi.createPage(payload);
     }
   }
 
@@ -233,7 +233,7 @@ const MainProcIncome = (() => {
     
     for (const row of targets) {
       const id = row[IDX.ID];
-      if (id) LocalUtils.deletePage(id);
+      if (id) NotionApi.deletePage(id);
     }
 
     return true;
