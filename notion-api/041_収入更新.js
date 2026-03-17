@@ -97,18 +97,18 @@ const MainProcIncome = (() => {
 
     if (title) {
       title = stripIconSuffix(title);
-      filterItems.push(new FilterItem(Constants.PROPERTY_INCOME.TITLE, 'title', 'equals', title));
+      filterItems.push(new NotionFilterItem(Constants.PROPERTY_INCOME.TITLE, 'title', 'equals', title));
     }
     if (unfinished) {
-      filterItems.push(new FilterItem(Constants.PROPERTY_INCOME.CHECKED, 'checkbox', 'equals', false));
+      filterItems.push(new NotionFilterItem(Constants.PROPERTY_INCOME.CHECKED, 'checkbox', 'equals', false));
     }
     if (periodFrom) {
-      filterItems.push(new FilterItem(Constants.PROPERTY_INCOME.DATE, 'date', 'on_or_after', periodFrom));
+      filterItems.push(new NotionFilterItem(Constants.PROPERTY_INCOME.DATE, 'date', 'on_or_after', periodFrom));
     }
     if (periodTo) {
-      filterItems.push(new FilterItem(Constants.PROPERTY_INCOME.DATE, 'date', 'on_or_before', periodTo));
+      filterItems.push(new NotionFilterItem(Constants.PROPERTY_INCOME.DATE, 'date', 'on_or_before', periodTo));
     }
-    return new Filter(filterItems);
+    return new NotionFilter(filterItems);
   };
 
   const fetchIncomePages = (sheet) => {

@@ -1,4 +1,5 @@
 .clasp.json
 node_modules/
 notion-api/823_properties.js
+notion-api/NotionPayload.js
 .DS_Store

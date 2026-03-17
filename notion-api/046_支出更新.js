@@ -50,28 +50,28 @@ const MainProcUpdate = (function () {
       if (title.includes('(')) {
         title = title.match(/(^.*)(?=\()/)[0];
       }
-      filterItems.push(new FilterItem(Constants.PROPERTY_SPENDING.TITLE, 'title', 'equals', title));
+      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.TITLE, 'title', 'equals', title));
     }
     if (category) {
-      filterItems.push(new FilterItem(Constants.PROPERTY_SPENDING.CATEGORY, 'select', 'equals', category));
+      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.CATEGORY, 'select', 'equals', category));
     }
     if (unfinished) {
-      filterItems.push(new FilterItem(Constants.PROPERTY_SPENDING.CHECKED, 'checkbox', 'equals', false));
+      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.CHECKED, 'checkbox', 'equals', false));
     }
     if (periodFrom) {
-      filterItems.push(new FilterItem(Constants.PROPERTY_SPENDING.DATE, 'date', 'on_or_after', periodFrom));
+      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.DATE, 'date', 'on_or_after', periodFrom));
     }
     if (periodTo) {
-      filterItems.push(new FilterItem(Constants.PROPERTY_SPENDING.DATE, 'date', 'on_or_before', periodTo));
+      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.DATE, 'date', 'on_or_before', periodTo));
     }
     if (methodPay) {
-      filterItems.push(new FilterItem(Constants.PROPERTY_SPENDING.METHOD_PAY, 'select', 'equals', methodPay));
+      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.METHOD_PAY, 'select', 'equals', methodPay));
     }
     if (shop) {
-      filterItems.push(new FilterItem(Constants.PROPERTY_SPENDING.SHOP, 'select', 'equals', shop));
+      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.SHOP, 'select', 'equals', shop));
     }
 
-    const resultArray = LocalUtils.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), new Filter(filterItems));
+    const resultArray = LocalUtils.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), new NotionFilter(filterItems));
     
     Logger.log(`[executeSelect] end: ${Date.now() - start}ms`);
     return resultArray;

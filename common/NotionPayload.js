@@ -1,4 +1,4 @@
-class Page {
+class NotionPage {
   constructor(dabaSourceId, propertyItems = new Map(), icon = '', children = []) {
     this.dabaSourceId = dabaSourceId;
     this.icon = icon;
@@ -32,7 +32,7 @@ class Page {
   }
 }
 
-class Filter {
+class NotionFilter {
   constructor(filterItem, sortMap, condition = 'and') {
     this.condition = condition;
     this.filterItem = filterItem;
@@ -60,7 +60,7 @@ class Filter {
   }
 }
 
-class FilterItem {
+class NotionFilterItem {
   constructor(item, type, condition, value) {
     this.item = item;
     this.type = type;
@@ -85,7 +85,7 @@ class FilterItem {
   }
 }
 
-class PropTitle {
+class NotionPropTitle {
   constructor(text = '') {
     this.text = text;
     this.isEmpty = !text;
@@ -104,7 +104,7 @@ class PropTitle {
   }
 }
 
-class PropText {
+class NotionPropText {
   constructor(text) {
     this.text = text;
     this.isEmpty = !text;
@@ -122,7 +122,7 @@ class PropText {
   }
 }
 
-class PropSelect {
+class NotionPropSelect {
   constructor(text) {
     this.text = text;
     this.isEmpty = !text;
@@ -131,13 +131,13 @@ class PropSelect {
   toJson() {
     return {
       'select': {
-        'name': this.text, 
+        'name': this.text,
       }
     };
   }
 }
 
-class PropNumber {
+class NotionPropNumber {
   constructor(num) {
     this.num = num;
     this.isEmpty = (num == null || num === '' || !isFinite(num));
@@ -150,7 +150,7 @@ class PropNumber {
   }
 }
 
-class PropUrl {
+class NotionPropUrl {
   constructor(url) {
     this.url = url;
     this.isEmpty = !url;
@@ -163,7 +163,7 @@ class PropUrl {
   }
 }
 
-class PropCheckBox {
+class NotionPropCheckBox {
   constructor(check) {
     this.check = check;
   }
@@ -175,7 +175,7 @@ class PropCheckBox {
   }
 }
 
-class PropDate {
+class NotionPropDate {
   constructor(start = null, useTimeZone = true, end = null) {
     switch (Object.prototype.toString.call(start)) {
       case '[object Date]':
@@ -212,7 +212,7 @@ class PropDate {
   }
 }
 
-class PropRelation {
+class NotionPropRelation {
   constructor(ids = []) {
     if (!Array.isArray(ids)) {
       ids = [ids];
@@ -232,7 +232,7 @@ class PropRelation {
   }
 }
 
-class Heading {
+class NotionHeading {
   constructor(type, text = '', blockColor = 'default', children = []) {
     this.type = type;
     this.text = text;
@@ -263,7 +263,7 @@ class Heading {
   }
 }
 
-class CheckBox {
+class NotionCheckBox {
   constructor(text = '', blockColor = 'default') {
     this.text = text;
     this.blockColor = blockColor;
@@ -285,7 +285,7 @@ class CheckBox {
   }
 }
 
-class BulletedList {
+class NotionBulletedList {
   constructor(text = '', textColor = 'default') {
     this.text = text;
     this.textColor = textColor;
@@ -308,7 +308,7 @@ class BulletedList {
   }
 }
 
-class Paragraph {
+class NotionParagraph {
   constructor(text = '', textColor = 'default') {
     this.text = text;
     this.textColor = textColor;

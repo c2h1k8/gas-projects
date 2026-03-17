@@ -10,10 +10,10 @@ const MainProcUnregisterdExpenseNotification = (function () {
    */
   const executeSelect = () => {
     const filterItems = [
-      new FilterItem(Constants.PROPERTY_SPENDING.TITLE, 'title', 'ends_with', '自動登録'),
-      new FilterItem(Constants.PROPERTY_SPENDING.CHECKED, 'checkbox', 'equals', false),
+      new NotionFilterItem(Constants.PROPERTY_SPENDING.TITLE, 'title', 'ends_with', '自動登録'),
+      new NotionFilterItem(Constants.PROPERTY_SPENDING.CHECKED, 'checkbox', 'equals', false),
     ];
-    return LocalUtils.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), new Filter(filterItems));
+    return LocalUtils.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), new NotionFilter(filterItems));
   }
 
   const pushMessage = (outData) => {

@@ -167,9 +167,9 @@ const LocalUtils = (function () {
      */
     getPageIdFromTitle: (dataSourceId, { TITLE }, value) => {
       const filterItems = [
-        new FilterItem(TITLE, 'title', 'equals', value),
+        new NotionFilterItem(TITLE, 'title', 'equals', value),
       ];
-      const resultQuery =  LocalUtils.getPages(dataSourceId, new Filter(filterItems));
+      const resultQuery =  LocalUtils.getPages(dataSourceId, new NotionFilter(filterItems));
       return resultQuery[0]?.id || '';
     },
     /**
@@ -224,17 +224,17 @@ const LocalUtils = (function () {
     getCreateSpending: ({ title, category, date, amount, shop, methodPay, url, note, icon, expenseRatio }) => {
       // プロパティ要素設定
       const propItem = new Map();
-      propItem.set(Constants.PROPERTY_SPENDING.TITLE, new PropTitle(title));
-      propItem.set(Constants.PROPERTY_SPENDING.CATEGORY, new PropSelect(category));
-      propItem.set(Constants.PROPERTY_SPENDING.DATE, new PropDate(date, false));
-      propItem.set(Constants.PROPERTY_SPENDING.AMOUNT, new PropNumber(amount));
-      propItem.set(Constants.PROPERTY_SPENDING.SHOP, new PropSelect(shop));
-      propItem.set(Constants.PROPERTY_SPENDING.METHOD_PAY, new PropSelect(methodPay));
-      propItem.set(Constants.PROPERTY_SPENDING.URL, new PropUrl(url));
-      propItem.set(Constants.PROPERTY_SPENDING.NOTE, new PropText(note));
-      propItem.set(Constants.PROPERTY_SPENDING.EXPENSE_RATIO, new PropNumber(expenseRatio));
-      propItem.set(Constants.PROPERTY_SPENDING.DB_UPDATE_CHECKED, new PropCheckBox(false));
-      return new Page(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), propItem, icon);
+      propItem.set(Constants.PROPERTY_SPENDING.TITLE, new NotionPropTitle(title));
+      propItem.set(Constants.PROPERTY_SPENDING.CATEGORY, new NotionPropSelect(category));
+      propItem.set(Constants.PROPERTY_SPENDING.DATE, new NotionPropDate(date, false));
+      propItem.set(Constants.PROPERTY_SPENDING.AMOUNT, new NotionPropNumber(amount));
+      propItem.set(Constants.PROPERTY_SPENDING.SHOP, new NotionPropSelect(shop));
+      propItem.set(Constants.PROPERTY_SPENDING.METHOD_PAY, new NotionPropSelect(methodPay));
+      propItem.set(Constants.PROPERTY_SPENDING.URL, new NotionPropUrl(url));
+      propItem.set(Constants.PROPERTY_SPENDING.NOTE, new NotionPropText(note));
+      propItem.set(Constants.PROPERTY_SPENDING.EXPENSE_RATIO, new NotionPropNumber(expenseRatio));
+      propItem.set(Constants.PROPERTY_SPENDING.DB_UPDATE_CHECKED, new NotionPropCheckBox(false));
+      return new NotionPage(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), propItem, icon);
     },
     /**
      * 収入登録用のデータを取得する
@@ -246,11 +246,11 @@ const LocalUtils = (function () {
      */
     getCreateIncome: ({ title, date, amount, icon }) => {
       const propItem = new Map();
-      propItem.set(Constants.PROPERTY_INCOME.TITLE, new PropTitle(title));
-      propItem.set(Constants.PROPERTY_INCOME.DATE, new PropDate(date, false));
-      propItem.set(Constants.PROPERTY_INCOME.AMOUNT, new PropNumber(amount));
-      propItem.set(Constants.PROPERTY_INCOME.DB_UPDATE_CHECKED, new PropCheckBox(false));
-      return new Page(Props.getValue(PKeys.DATA_SOURCE_ID_INCOME), propItem, icon);
+      propItem.set(Constants.PROPERTY_INCOME.TITLE, new NotionPropTitle(title));
+      propItem.set(Constants.PROPERTY_INCOME.DATE, new NotionPropDate(date, false));
+      propItem.set(Constants.PROPERTY_INCOME.AMOUNT, new NotionPropNumber(amount));
+      propItem.set(Constants.PROPERTY_INCOME.DB_UPDATE_CHECKED, new NotionPropCheckBox(false));
+      return new NotionPage(Props.getValue(PKeys.DATA_SOURCE_ID_INCOME), propItem, icon);
     },
     jsonStringify: (obj) => JSON.stringify(obj, (k, v) => (v instanceof Map ? { dataType: 'Map', value: [...v] } : v)),
     jsonParse: (obj) => {
