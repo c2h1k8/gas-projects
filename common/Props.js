@@ -7,18 +7,14 @@ const Props = (function () {
   const _valueCache = new Map();
   const _jsonCache = new Map();
 
-  const _stringify = (obj) => JSON.stringify(obj, (_, v) => v instanceof Map ? { dataType: "Map", value: [...v] } : v);
-
-  const _parse = (obj) => JSON.parse(obj, (_, v) => v?.dataType === "Map" ? new Map(v.value) : v);
-
   const _loadJsonFromStore = (key) => {
     if (_jsonCache.has(key)) return _jsonCache.get(key);
 
     const jsonStr = scriptProps.getProperty(key);
-    const value = jsonStr ? _parse(jsonStr) : null;
+    const value = jsonStr ? CoreUtils.jsonParse(jsonStr) : null;
     _jsonCache.set(key, value);
     return value;
-  }
+  };
 
   return {
     /** 単一キーの保存 */
@@ -47,7 +43,7 @@ const Props = (function () {
     /** JSON シリアライズ可能な値を保存（Map も対応） */
     setJson: function (key, value) {
       _jsonCache.set(key, value);
-      scriptProps.setProperty(key, _stringify(value));
+      scriptProps.setProperty(key, CoreUtils.jsonStringify(value));
     },
 
     /** JSON 値を取得 */

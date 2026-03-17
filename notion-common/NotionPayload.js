@@ -2,7 +2,7 @@
 
 const toDateString_ = (value) => {
   switch (Object.prototype.toString.call(value)) {
-    case '[object Date]': return Utilities.formatDate(value, "JST", "yyyy-MM-dd");
+    case '[object Date]': return Utilities.formatDate(value, 'JST', 'yyyy-MM-dd');
     case '[object String]': return value;
     default: return null;
   }
@@ -87,39 +87,35 @@ class NotionFilterItem {
   }
 }
 
+// ---- プロパティ基底クラス ----
+
+class NotionPropSimple_ {
+  constructor(value) {
+    this.value = value;
+    this.isEmpty = !value;
+  }
+}
+
 // ---- プロパティクラス ----
 
-class NotionPropTitle {
-  constructor(text = '') {
-    this.text = text;
-    this.isEmpty = !text;
-  }
-
-  toJson() {
-    return { 'title': buildRichText_(this.text) };
-  }
+class NotionPropTitle extends NotionPropSimple_ {
+  constructor(text = '') { super(text); }
+  toJson() { return { 'title': buildRichText_(this.value) }; }
 }
 
-class NotionPropText {
-  constructor(text) {
-    this.text = text;
-    this.isEmpty = !text;
-  }
-
-  toJson() {
-    return { 'rich_text': buildRichText_(this.text) };
-  }
+class NotionPropText extends NotionPropSimple_ {
+  constructor(text) { super(text); }
+  toJson() { return { 'rich_text': buildRichText_(this.value) }; }
 }
 
-class NotionPropSelect {
-  constructor(text) {
-    this.text = text;
-    this.isEmpty = !text;
-  }
+class NotionPropSelect extends NotionPropSimple_ {
+  constructor(text) { super(text); }
+  toJson() { return { 'select': { 'name': this.value } }; }
+}
 
-  toJson() {
-    return { 'select': { 'name': this.text } };
-  }
+class NotionPropUrl extends NotionPropSimple_ {
+  constructor(url) { super(url); }
+  toJson() { return { 'url': this.value }; }
 }
 
 class NotionPropNumber {
@@ -133,20 +129,10 @@ class NotionPropNumber {
   }
 }
 
-class NotionPropUrl {
-  constructor(url) {
-    this.url = url;
-    this.isEmpty = !url;
-  }
-
-  toJson() {
-    return { 'url': this.url };
-  }
-}
-
 class NotionPropCheckBox {
   constructor(check) {
     this.check = check;
+    this.isEmpty = false;
   }
 
   toJson() {
@@ -193,6 +179,26 @@ class NotionPropRelation {
   }
 }
 
+// ---- ブロック基底クラス ----
+
+class NotionBlockItem_ {
+  constructor(type, text = '', color = 'default') {
+    this.type = type;
+    this.text = text;
+    this.color = color;
+  }
+
+  toJson() {
+    return {
+      'type': this.type,
+      [this.type]: {
+        'rich_text': buildRichTextBlock_(this.text),
+        'color': this.color,
+      },
+    };
+  }
+}
+
 // ---- ブロッククラス ----
 
 class NotionHeading {
@@ -216,53 +222,14 @@ class NotionHeading {
   }
 }
 
-class NotionCheckBox {
-  constructor(text = '', blockColor = 'default') {
-    this.text = text;
-    this.blockColor = blockColor;
-  }
-
-  toJson() {
-    return {
-      'type': 'to_do',
-      'to_do': {
-        'rich_text': buildRichTextBlock_(this.text),
-        'color': this.blockColor,
-      }
-    };
-  }
+class NotionCheckBox extends NotionBlockItem_ {
+  constructor(text = '', blockColor = 'default') { super('to_do', text, blockColor); }
 }
 
-class NotionBulletedList {
-  constructor(text = '', textColor = 'default') {
-    this.text = text;
-    this.textColor = textColor;
-  }
-
-  toJson() {
-    return {
-      'type': 'bulleted_list_item',
-      'bulleted_list_item': {
-        'rich_text': buildRichTextBlock_(this.text),
-        'color': this.textColor,
-      }
-    };
-  }
+class NotionBulletedList extends NotionBlockItem_ {
+  constructor(text = '', textColor = 'default') { super('bulleted_list_item', text, textColor); }
 }
 
-class NotionParagraph {
-  constructor(text = '', textColor = 'default') {
-    this.text = text;
-    this.textColor = textColor;
-  }
-
-  toJson() {
-    return {
-      'type': 'paragraph',
-      'paragraph': {
-        'rich_text': buildRichTextBlock_(this.text),
-        'color': this.textColor,
-      }
-    };
-  }
+class NotionParagraph extends NotionBlockItem_ {
+  constructor(text = '', textColor = 'default') { super('paragraph', text, textColor); }
 }

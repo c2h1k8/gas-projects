@@ -25,13 +25,8 @@ const LoadingUI = (() => {
   return {
     open: (hint = '処理中…', opts = {}) => {
       const { w, h } = resolveSize(opts);
-
       setState({ status: 'loading', hint });
-
-      const html = HtmlService.createHtmlOutputFromFile('Loading')
-        .setWidth(w)
-        .setHeight(h);
-
+      const html = HtmlService.createHtmlOutputFromFile('Loading').setWidth(w).setHeight(h);
       SpreadsheetApp.getUi().showModalDialog(html, ' ');
     },
 
@@ -52,13 +47,8 @@ const LoadingUI = (() => {
 
     close: (opts = {}) => {
       CACHE.remove(KEY);
-
       const { w, h } = resolveSize(opts);
-
-      const html = HtmlService.createHtmlOutput(
-        '<script>google.script.host.close();</script>'
-      ).setWidth(w).setHeight(h);
-
+      const html = HtmlService.createHtmlOutput('<script>google.script.host.close();</script>').setWidth(w).setHeight(h);
       SpreadsheetApp.getUi().showModalDialog(html, ' ');
     },
 
@@ -68,26 +58,26 @@ const LoadingUI = (() => {
 
 /**
  * ローディング表示つきで処理を実行する共通ラッパー
- * @param {Function} fn 実行する処理（同期でもOK）
+ * @param {Function} fn 実行する処理
  * @param {Object} opts 表示文言など
- * @return {any} fn の戻り値
+ * @returns {any} fn の戻り値
  */
 function withLoading(fn, opts) {
-  opts = opts || {};
-  var startHint = opts.startHint || '処理中…';
-  var successHint = opts.successHint || '完了しました';
-  var errorPrefix = (opts.errorPrefix != null) ? opts.errorPrefix : 'エラー: ';
+  const o = opts || {};
+  const startHint = o.startHint || '処理中…';
+  const successHint = o.successHint || '完了しました';
+  const errorPrefix = o.errorPrefix != null ? o.errorPrefix : 'エラー: ';
 
   LoadingUI.open(startHint);
 
   try {
-    var result = fn();
+    const result = fn();
 
     if (result && typeof result.then === 'function') {
-      return result.then(function (v) {
+      return result.then((v) => {
         LoadingUI.complete(successHint);
         return v;
-      }).catch(function (e) {
+      }).catch((e) => {
         LoadingUI.error(errorPrefix + (e && e.message ? e.message : String(e)));
         throw e;
       });
@@ -102,6 +92,7 @@ function withLoading(fn, opts) {
   }
 }
 
+// GAS クライアントサイドから呼び出し可能なエントリーポイント
 function LoadingUi_getStateForClient() {
   return LoadingUI.getStateForClient();
 }

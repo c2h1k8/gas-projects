@@ -1,5 +1,6 @@
 const DateUtils = (function () {
   const CAL_JA = 'ja.japanese.official#holiday@group.v.calendar.google.com';
+  const MAX_SEARCH_DAYS = 365;
 
   /**
    * 営業日かどうかを判定します。
@@ -31,13 +32,14 @@ const DateUtils = (function () {
     if (!isInclude) {
       tmpDate.setDate(tmpDate.getDate() + addDays);
     }
-    while (true) {
+    for (let count = 0; count < MAX_SEARCH_DAYS; count++) {
       const dayOWeek = tmpDate.getDay();
       if (targetWeeks.includes(dayOWeek) || (targetWeeks.includes(-1) && calJa.getEventsForDay(tmpDate).length > 0)) {
         return tmpDate;
       }
       tmpDate.setDate(tmpDate.getDate() + addDays);
     }
+    throw new Error(`対象曜日が見つかりません: ${DateUtils.formatDate(targetDate)}`);
   };
 
   return {
@@ -52,14 +54,11 @@ const DateUtils = (function () {
       if (!isInclude) {
         prevDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 1);
       }
-      let i = 1;
-      while (true) {
-        if (!isBizDate_(prevDate)) {
-          prevDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 1 * i++);
-          continue;
-        }
-        return prevDate;
+      for (let i = 0; i < MAX_SEARCH_DAYS; i++) {
+        if (isBizDate_(prevDate)) return prevDate;
+        prevDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - i - 1);
       }
+      throw new Error(`前営業日が見つかりません: ${DateUtils.formatDate(targetDate)}`);
     },
 
     /**
@@ -73,14 +72,11 @@ const DateUtils = (function () {
       if (!isInclude) {
         nextDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1);
       }
-      let i = 1;
-      while (true) {
-        if (!isBizDate_(nextDate)) {
-          nextDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1 * i++);
-          continue;
-        }
-        return nextDate;
+      for (let i = 0; i < MAX_SEARCH_DAYS; i++) {
+        if (isBizDate_(nextDate)) return nextDate;
+        nextDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + i + 1);
       }
+      throw new Error(`翌営業日が見つかりません: ${DateUtils.formatDate(targetDate)}`);
     },
 
     /**

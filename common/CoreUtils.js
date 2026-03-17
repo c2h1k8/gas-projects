@@ -3,8 +3,8 @@ const CoreUtils = (function () {
     jsonStringify: (obj) => JSON.stringify(obj, (k, v) => (v instanceof Map ? { dataType: 'Map', value: [...v] } : v)),
     jsonParse: (obj) => {
       return JSON.parse(obj, (k, v) => {
-        if (typeof v === "object" && v !== null) {
-          if (v.dataType === "Map") {
+        if (typeof v === 'object' && v !== null) {
+          if (v.dataType === 'Map') {
             return new Map(v.value);
           }
         }
@@ -20,6 +20,7 @@ const CoreUtils = (function () {
         }
         return 0;
       });
+      return array;
     },
   };
 })();

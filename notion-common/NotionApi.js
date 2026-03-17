@@ -7,15 +7,15 @@ const NotionApi = (function () {
 
   const fetch = (url, options, needsLog) => {
     try {
-      const res = UrlFetchApp.fetch(url, options);
-      if (needsLog) Logger.log(res);
+      const response = UrlFetchApp.fetch(url, options);
+      if (needsLog) Logger.log(response);
       Utilities.sleep(1000); // 平均3回/秒のリミット回避のためスリープ
-      return JSON.parse(res);
+      return JSON.parse(response);
     } catch (e) {
       Logger.log(e);
       throw e;
     }
-  }
+  };
 
   const buildOptions = (method, payload = null) => {
     const options = {
@@ -34,7 +34,7 @@ const NotionApi = (function () {
   const getDatabaseColumnQuery = (dataSourceId, needsLog) => {
     const url = `https://api.notion.com/v1/data_sources/${dataSourceId}`;
     return fetch(url, buildOptions('GET'), needsLog);
-  }
+  };
 
   /**
    * DBから指定条件に合うものを取得する
@@ -43,7 +43,7 @@ const NotionApi = (function () {
   const getDatabaseQuery = (dataSourceId, payload, needsLog) => {
     const url = `https://api.notion.com/v1/data_sources/${dataSourceId}/query`;
     return fetch(url, buildOptions('POST', payload), needsLog);
-  }
+  };
 
   const getPageFromId_ = (pageId, needsLog = false) => {
     const url = `https://api.notion.com/v1/pages/${pageId}`;
@@ -101,15 +101,15 @@ const NotionApi = (function () {
     getPages: getPages_,
     /**
      * ページIDからページ情報を取得する
-     * @param pageId ページID
-     * @return ページ
+     * @param {string} pageId ページID
+     * @returns ページ
      */
     getPageFromId: getPageFromId_,
     /**
      * ページIDからタイトル名を取得する
-     * @param pageId ページID
-     * @param TITLE タイトル名
-     * @return タイトル名
+     * @param {string} pageId ページID
+     * @param {Object} columns タイトル列名
+     * @returns {string} タイトル名
      */
     getTitleFromId: (pageId, { TITLE }, needsLog = false) => {
       const result = getPageFromId_(pageId, needsLog);
@@ -117,10 +117,10 @@ const NotionApi = (function () {
     },
     /**
      * タイトルからページIDを1件取得する
-     * @param dataSourceId データソースID
-     * @param TITLE タイトル名
-     * @param value プロパティ値
-     * @return ページID
+     * @param {string} dataSourceId データソースID
+     * @param {Object} columns タイトル列名
+     * @param {string} value プロパティ値
+     * @returns {string} ページID
      */
     getPageIdFromTitle: (dataSourceId, { TITLE }, value) => {
       const filterItems = [
@@ -131,6 +131,9 @@ const NotionApi = (function () {
     },
     /**
      * DBから指定されたDBの列情報を取得する
+     * @param {string} dataSourceId データソースID
+     * @param {string|string[]} columns 列名
+     * @returns {Map} 列情報マップ
      */
     getDbColumns: (dataSourceId, columns, needsLog = false) => {
       const resultQuery = getDatabaseColumnQuery(dataSourceId, needsLog);
