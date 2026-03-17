@@ -255,7 +255,7 @@ const getButtonData = (altText, thumbnailImageUrl, title, text, actions) => {
  * @param columns カラムオブジェクト配列（最大カラム数：10）
  * @return HTTPレスポンスデータ
  */
-function replayCarousel(token, replyToken, altText, columns) {
+function replyCarousel(token, replyToken, altText, columns) {
   const postData = getCarouselData(altText, columns);
   return reply(token, replyToken, postData);
 }
@@ -299,7 +299,7 @@ function getCarouselColumn(thumbnailImageUrl, title, text, actions) {
  * @return メッセージデータ
  */
 const getCarouselData = (altText, columns) => {
-  return postData = {
+  return {
     'messages': [
       {
         'type': 'template',
@@ -383,5 +383,10 @@ const post = (url, token, postData) => {
     'payload' : JSON.stringify(postData),
     'muteHttpExceptions' : true,
   };
-  return UrlFetchApp.fetch(url, options);
+  const res = UrlFetchApp.fetch(url, options);
+  const code = res.getResponseCode();
+  if (code !== 200) {
+    throw new Error(`LINE API Error: ${code} - ${res.getContentText()}`);
+  }
+  return res;
 }
