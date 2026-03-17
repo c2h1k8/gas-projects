@@ -36,7 +36,8 @@ copy_files() {
 }
 
 # プロジェクトごとのコピー設定
-copy_dir   "household-account"   "common" "notion-common"
+copy_files "household-account" "common"       "CoreUtils.js" "DateUtils.js" "GoogleApi.js" "Loading.html" "LoadingUi.js" "Props.js" "SpreadUtils.js"
+copy_files "household-account" "notion-common" "NotionApi.js" "NotionPayload.js"
 copy_files "notion-checked-time" "common"       "CoreUtils.js" "Props.js"
 copy_files "notion-checked-time" "notion-common" "NotionApi.js" "NotionPayload.js"
 copy_files "line-attendance"     "common"        "CoreUtils.js" "Props.js" "GoogleApi.js" "LockUtil.js" "DateUtils.js"
