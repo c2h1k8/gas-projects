@@ -55,7 +55,7 @@ const MainProcRegist = (function () {
       // 登録
       for (const [key, value] of pageMap) {
         const res = LocalUtils.createPage(value);
-        console.log(res)
+        Logger.log(res)
         if (res) continue;
         // 登録失敗したものは削除
         pageMap.delete(key)
@@ -70,7 +70,15 @@ const MainProcRegist = (function () {
 
 function OnClickRegist() {
   return withLoading(function () {
-    MainProcRegist.regist();
+    try {
+      MainProcRegist.regist();
+    } catch (e) {
+      if (e instanceof DbNotFoundException) {
+        Browser.msgBox(e.message);
+        return;
+      }
+      throw e;
+    }
   }, { startHint: '登録中…', successHint: '登録完了！' });
 }
 

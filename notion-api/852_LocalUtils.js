@@ -16,7 +16,7 @@ const LocalUtils = (function () {
       return JSON.parse(res);
     } catch (e) {
       Logger.log(e);
-      return undefined;
+      throw e;
     }
   }
 

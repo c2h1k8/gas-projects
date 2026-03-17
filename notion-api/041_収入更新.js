@@ -229,7 +229,7 @@ const MainProcIncome = (() => {
     }
 
     const values = rng.getValues();
-    const targets = values.filter((row) => !!row[IDX.CHK]);v
+    const targets = values.filter((row) => !!row[IDX.CHK]);
     
     for (const row of targets) {
       const id = row[IDX.ID];
@@ -243,22 +243,34 @@ const MainProcIncome = (() => {
 })();
 
 // ===== click handlers =====
+const handleError_ = (e) => {
+  if (e instanceof DbNotFoundException) {
+    Browser.msgBox(e.message);
+    return;
+  }
+  throw e;
+};
+
 function OnClickSearchIncome() {
   return withLoading(function () {
-    MainProcIncome.search();
+    try {
+      MainProcIncome.search();
+    } catch (e) { handleError_(e); }
   }, { startHint: '検索中…', successHint: '検索完了！' });
 }
 
 function OnClickUpdateIncome() {
   return withLoading(function () {
-    if (MainProcIncome.upsert()) MainProcIncome.search();
+    try {
+      if (MainProcIncome.upsert()) MainProcIncome.search();
+    } catch (e) { handleError_(e); }
   }, { startHint: '更新中…', successHint: '更新完了！' });
 }
 
 function OnClickDeleteIncome() {
   return withLoading(function () {
-    if (MainProcIncome.delete()) {
-      MainProcIncome.search();
-    }
+    try {
+      if (MainProcIncome.delete()) MainProcIncome.search();
+    } catch (e) { handleError_(e); }
   }, { startHint: '削除中…', successHint: '削除完了！' });
 }

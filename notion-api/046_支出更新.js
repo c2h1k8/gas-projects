@@ -5,13 +5,13 @@ const MainProcUpdate = (function () {
   const COL_ID = 3;
   const COL_AMOUNT = 7;
 
-  const RNG_SEARCH_CONDIITON_TITLE = 'N7';
-  const RNG_SEARCH_CONDIITON_CATEGORY = 'N8';
-  const RNG_SEARCH_CONDIITON_UNFINISHED = 'N9';
-  const RNG_SEARCH_CONDIITON_FROM = 'N10';
-  const RNG_SEARCH_CONDIITON_TO = 'N11';
-  const RNG_SEARCH_CONDIITON_METHOD_PAY = 'N12';
-  const RNG_SEARCH_CONDIITON_SHOP = 'N13';
+  const RNG_SEARCH_CONDITION_TITLE = 'N7';
+  const RNG_SEARCH_CONDITION_CATEGORY = 'N8';
+  const RNG_SEARCH_CONDITION_UNFINISHED = 'N9';
+  const RNG_SEARCH_CONDITION_FROM = 'N10';
+  const RNG_SEARCH_CONDITION_TO = 'N11';
+  const RNG_SEARCH_CONDITION_METHOD_PAY = 'N12';
+  const RNG_SEARCH_CONDITION_SHOP = 'N13';
  
   const getSheet = () => SpreadsheetApp.getActiveSpreadsheet().getSheetByName('支出更新');
 
@@ -36,13 +36,13 @@ const MainProcUpdate = (function () {
   const executeSelect = (sheet) => {
     const start = Date.now();
     Logger.log('[executeSelect] start');
-    let title = sheet.getRange(RNG_SEARCH_CONDIITON_TITLE).getValue();
-    const category = sheet.getRange(RNG_SEARCH_CONDIITON_CATEGORY).getValue();
-    const unfinished = sheet.getRange(RNG_SEARCH_CONDIITON_UNFINISHED).getValue();
-    const periodFrom = sheet.getRange(RNG_SEARCH_CONDIITON_FROM).getValue();
-    const periodTo = sheet.getRange(RNG_SEARCH_CONDIITON_TO).getValue();
-    const methodPay = sheet.getRange(RNG_SEARCH_CONDIITON_METHOD_PAY).getValue();
-    const shop = sheet.getRange(RNG_SEARCH_CONDIITON_SHOP).getValue();
+    let title = sheet.getRange(RNG_SEARCH_CONDITION_TITLE).getValue();
+    const category = sheet.getRange(RNG_SEARCH_CONDITION_CATEGORY).getValue();
+    const unfinished = sheet.getRange(RNG_SEARCH_CONDITION_UNFINISHED).getValue();
+    const periodFrom = sheet.getRange(RNG_SEARCH_CONDITION_FROM).getValue();
+    const periodTo = sheet.getRange(RNG_SEARCH_CONDITION_TO).getValue();
+    const methodPay = sheet.getRange(RNG_SEARCH_CONDITION_METHOD_PAY).getValue();
+    const shop = sheet.getRange(RNG_SEARCH_CONDITION_SHOP).getValue();
 
     const filterItems = [];
 
@@ -241,9 +241,19 @@ const MainProcUpdate = (function () {
   }
 })();
 
+const handleError_ = (e) => {
+  if (e instanceof DbNotFoundException) {
+    Browser.msgBox(e.message);
+    return;
+  }
+  throw e;
+};
+
 function OnClickSearchSpending() {
   return withLoading(function () {
-    MainProcUpdate.search();
+    try {
+      MainProcUpdate.search();
+    } catch (e) { handleError_(e); }
   }, {
     startHint: '検索中…',
     successHint: '検索完了！'
@@ -252,9 +262,9 @@ function OnClickSearchSpending() {
 
 function OnClickUpdateSpending() {
   return withLoading(function () {
-    if (MainProcUpdate.update()) {
-      MainProcUpdate.search();
-    }
+    try {
+      if (MainProcUpdate.update()) MainProcUpdate.search();
+    } catch (e) { handleError_(e); }
   }, {
     startHint: '更新中…',
     successHint: '更新完了！'
@@ -263,9 +273,9 @@ function OnClickUpdateSpending() {
 
 function OnClickDeleteSpending() {
   return withLoading(function () {
-    if (MainProcUpdate.delete()) {
-      MainProcUpdate.search();
-    }
+    try {
+      if (MainProcUpdate.delete()) MainProcUpdate.search();
+    } catch (e) { handleError_(e); }
   }, {
     startHint: '削除中…',
     successHint: '削除完了！'

@@ -52,7 +52,7 @@ class Filter {
       for (const [key, value] of this.sortMap) {
         json.sorts.push({
           'property': key,
-          'direction': `${value}ending`,
+          'direction': value ? 'descending' : 'ascending',
         });
       }
     }
