@@ -1,7 +1,7 @@
 .clasp.json
 node_modules/
 notion-api/823_properties.js
-notion-api/NotionPayload.js
-notion-api/860_loading.html
-notion-api/861_LoadingUi.js
+notion-api/NotionCommon_Payload.js
+notion-api/Common_Loading.html
+notion-api/Common_LoadingUi.js
 .DS_Store

@@ -24,7 +24,7 @@ const LoadingUI = (() => {
 
       setState({ status: 'loading', hint });
 
-      const html = HtmlService.createHtmlOutputFromFile('860_loading')
+      const html = HtmlService.createHtmlOutputFromFile('Common_Loading')
         .setWidth(w)
         .setHeight(h);
 
