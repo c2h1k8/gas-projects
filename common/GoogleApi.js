@@ -45,13 +45,6 @@ const GoogleApi = (function () {
     },
 
     /**
-     * カレンダーから予定を取得する
-     * @param {string} calendarId カレンダーID
-     * @param {Date} startDate 開始日
-     * @param {Date} [endDate] 終了日
-     * @returns {Map} 予定マップ
-     */
-    /**
      * メールを送信する
      * @param {string|string[]} to 送信先（配列または文字列）
      * @param {string} subject 件名
@@ -73,6 +66,13 @@ const GoogleApi = (function () {
       }
     },
 
+    /**
+     * カレンダーから予定を取得する
+     * @param {string} calendarId カレンダーID
+     * @param {Date} startDate 開始日
+     * @param {Date} [endDate] 終了日
+     * @returns {Map} 予定マップ
+     */
     getCalendarEvents: (calendarId, startDate, endDate = '') => {
       const cal = CalendarApp.getCalendarById(calendarId);
       const events = endDate ? cal.getEvents(startDate, endDate) : cal.getEventsForDay(startDate);
