@@ -243,7 +243,7 @@ const MainProcIncome = (() => {
 })();
 
 // ===== click handlers =====
-const handleError_ = (e) => {
+const handleIncomeError_ = (e) => {
   if (e instanceof DbNotFoundException) {
     Browser.msgBox(e.message);
     return;
@@ -255,7 +255,7 @@ function OnClickSearchIncome() {
   return withLoading(function () {
     try {
       MainProcIncome.search();
-    } catch (e) { handleError_(e); }
+    } catch (e) { handleIncomeError_(e); }
   }, { startHint: '検索中…', successHint: '検索完了！' });
 }
 
@@ -263,7 +263,7 @@ function OnClickUpdateIncome() {
   return withLoading(function () {
     try {
       if (MainProcIncome.upsert()) MainProcIncome.search();
-    } catch (e) { handleError_(e); }
+    } catch (e) { handleIncomeError_(e); }
   }, { startHint: '更新中…', successHint: '更新完了！' });
 }
 
@@ -271,6 +271,6 @@ function OnClickDeleteIncome() {
   return withLoading(function () {
     try {
       if (MainProcIncome.delete()) MainProcIncome.search();
-    } catch (e) { handleError_(e); }
+    } catch (e) { handleIncomeError_(e); }
   }, { startHint: '削除中…', successHint: '削除完了！' });
 }

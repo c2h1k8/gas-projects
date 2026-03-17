@@ -241,7 +241,7 @@ const MainProcUpdate = (function () {
   }
 })();
 
-const handleError_ = (e) => {
+const handleSpendingError_ = (e) => {
   if (e instanceof DbNotFoundException) {
     Browser.msgBox(e.message);
     return;
@@ -253,7 +253,7 @@ function OnClickSearchSpending() {
   return withLoading(function () {
     try {
       MainProcUpdate.search();
-    } catch (e) { handleError_(e); }
+    } catch (e) { handleSpendingError_(e); }
   }, {
     startHint: '検索中…',
     successHint: '検索完了！'
@@ -264,7 +264,7 @@ function OnClickUpdateSpending() {
   return withLoading(function () {
     try {
       if (MainProcUpdate.update()) MainProcUpdate.search();
-    } catch (e) { handleError_(e); }
+    } catch (e) { handleSpendingError_(e); }
   }, {
     startHint: '更新中…',
     successHint: '更新完了！'
@@ -275,7 +275,7 @@ function OnClickDeleteSpending() {
   return withLoading(function () {
     try {
       if (MainProcUpdate.delete()) MainProcUpdate.search();
-    } catch (e) { handleError_(e); }
+    } catch (e) { handleSpendingError_(e); }
   }, {
     startHint: '削除中…',
     successHint: '削除完了！'
