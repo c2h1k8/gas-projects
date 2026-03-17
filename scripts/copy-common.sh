@@ -23,6 +23,6 @@ copy_project_files() {
 }
 
 # プロジェクトごとのコピー設定
-copy_project_files "notion-api" "common" "notion-common"
+copy_project_files "household-account" "common" "notion-common"
 
 echo "Done."
