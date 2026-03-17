@@ -31,11 +31,11 @@ const MainProcIncome = (() => {
    * データ範囲（チェック列〜最終列）を返す。データが無ければ null
    */
   const getDataRange = (sheet) => {
-    const endRow = Utils.getEndRow(sheet, COL_TITLE);
+    const endRow = SpreadUtils.getEndRow(sheet, COL_TITLE);
     const rowCnt = endRow - ROW_HEADER;
     if (rowCnt <= 0) return null;
 
-    const endCol = Utils.getEndCol(sheet, ROW_HEADER);
+    const endCol = SpreadUtils.getEndCol(sheet, ROW_HEADER);
     const colCnt = endCol - COL_CHK + 1;
 
     return sheet.getRange(ROW_DATA, COL_CHK, rowCnt, colCnt);

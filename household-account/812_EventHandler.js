@@ -23,7 +23,7 @@ const MainProcEventHandler = (function () {
         Constants.SHEET_MASTER.ROW.CHK,
         Constants.SHEET_MASTER.COL.CHK_TARGET,
         1,
-        Utils.getEndCol(sheet, Constants.SHEET_MASTER.ROW.CHK)).setValue(to);
+        SpreadUtils.getEndCol(sheet, Constants.SHEET_MASTER.ROW.CHK)).setValue(to);
     },
   };
 })();

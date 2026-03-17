@@ -6,7 +6,7 @@ const MainProcMaster = (() => {
    * @param lists 出力情報リスト
    */
   const outSheet = (sheet, colNo, lists) => {
-    const rowNoEnd = Utils.getEndRow(sheet, colNo);
+    const rowNoEnd = SpreadUtils.getEndRow(sheet, colNo);
     if (Constants.SHEET_MASTER.ROW.HEADER !== rowNoEnd) {
       sheet.getRange(Constants.SHEET_MASTER.ROW.DATA, colNo, rowNoEnd - Constants.SHEET_MASTER.ROW.HEADER, 1).clear();
     }
@@ -28,7 +28,7 @@ const MainProcMaster = (() => {
     
   const getTargetColList = () => {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(Constants.SHEET_MASTER.NAME);
-    const colNoEnd = Utils.getEndCol(sheet, Constants.SHEET_MASTER.ROW.CHK);
+    const colNoEnd = SpreadUtils.getEndCol(sheet, Constants.SHEET_MASTER.ROW.CHK);
     const valuesChk = sheet.getRange(Constants.SHEET_MASTER.ROW.CHK, Constants.SHEET_MASTER.COL.CHK_TARGET, 1, colNoEnd).getValues()[0];
     return valuesChk.map((val, i) => val && i > 0 ? i + 1 : null).filter(x => x);
   }

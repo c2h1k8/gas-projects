@@ -20,8 +20,8 @@ const MainProcUpdate = (function () {
    */
   const getDataRange = (sheet) => {
     const start = Date.now();
-    const rowCnt = Utils.getEndRow(sheet, COL_AMOUNT) - ROW_HEADER;
-    const colCnt = Utils.getEndCol(sheet, ROW_HEADER) - COL_CHK + 1;
+    const rowCnt = SpreadUtils.getEndRow(sheet, COL_AMOUNT) - ROW_HEADER;
+    const colCnt = SpreadUtils.getEndCol(sheet, ROW_HEADER) - COL_CHK + 1;
     Logger.log(`[getDataRange] rowCnt: ${rowCnt}, colCnt: ${colCnt}, time: ${Date.now() - start}ms`);
     if (rowCnt === 0) return undefined;
     return sheet.getRange(ROW_DATA, COL_CHK, rowCnt, colCnt);

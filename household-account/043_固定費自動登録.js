@@ -19,8 +19,8 @@ const MainProcFixedCost = (function () {
 
   const getData = () => {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-    const rowCnt = Utils.getEndRow(sheet, COL_TYPE) - ROW_HEADER;
-    const colCnt = Utils.getEndCol(sheet, ROW_HEADER) - COL_TYPE + 1;
+    const rowCnt = SpreadUtils.getEndRow(sheet, COL_TYPE) - ROW_HEADER;
+    const colCnt = SpreadUtils.getEndCol(sheet, ROW_HEADER) - COL_TYPE + 1;
     if (rowCnt === 0) {
       return undefined;
     }

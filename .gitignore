@@ -9,4 +9,6 @@ household-account/Props.js
 household-account/CoreUtils.js
 household-account/DateUtils.js
 household-account/GoogleApi.js
+household-account/SpreadUtils.js
+household-account/HtmlUtils.js
 .DS_Store
