@@ -47,20 +47,31 @@ const MainProcFixedCost = (function () {
 
   const isRegistDate = (day, isBizPrev, isBizNext) => {
     const now = new Date();
-    let date = new Date(now.getFullYear(), now.getMonth(), day);
-    if (date.getMonth() !== now.getMonth()) {
-      // 存在しない日の場合、最終日を設定
-      date = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    // 候補月: 今月に加え、営業日調整で月をまたぐケースを考慮する
+    // isBizNext: 前月の設定日の翌営業日が今月になる場合（例: 2/28(土) → 3/2）
+    // isBizPrev: 翌月の設定日の前営業日が今月になる場合（例: 3/1(祝) → 2/28）
+    const candidateMonths = [now.getMonth()];
+    if (isBizNext) candidateMonths.push(now.getMonth() - 1);
+    if (isBizPrev) candidateMonths.push(now.getMonth() + 1);
+
+    for (const month of candidateMonths) {
+      let date = new Date(now.getFullYear(), month, day);
+      // 存在しない日（例: 2/30）は月末に補正
+      const expectedMonth = ((month % 12) + 12) % 12;
+      if (date.getMonth() !== expectedMonth) {
+        date = new Date(now.getFullYear(), month + 1, 0);
+      }
+      if (isBizPrev) date = DateUtils.getBizDatePrev(date);
+      if (isBizNext) date = DateUtils.getBizDateNext(date);
+
+      if (date.getFullYear() === now.getFullYear()
+        && date.getMonth() === now.getMonth()
+        && date.getDate() === now.getDate()) {
+        return true;
+      }
     }
-    if (isBizPrev) {
-      // 前営業日の場合、前営業日を設定
-      date = DateUtils.getBizDatePrev(date);
-    }
-    if (isBizNext) {
-      // 翌営業日の場合、翌営業日を設定
-      date = DateUtils.getBizDateNext(date);
-    }
-    return now.getDate() === date.getDate();
+    return false;
   }
 
   return {
