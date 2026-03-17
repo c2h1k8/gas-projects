@@ -12,11 +12,6 @@
     ],
     "libraries": [
       {
-        "userSymbol": "DateUtils",
-        "libraryId": "1Atiputc7VmSCbwEnGgaiD_0ZgnjBo-IuT-MHQh-DV_-0A0vLG5AneE1o",
-        "version": "6"
-      },
-      {
         "userSymbol": "LineUtil",
         "libraryId": "1AGlk4JQPDNGOxKfJqyVOwWlH6M6TGm0fDxplKXdo5p8DMsQOzXCf5sYS",
         "version": "13"
