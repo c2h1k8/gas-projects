@@ -2,6 +2,7 @@
 node_modules/
 household-account/823_properties.js
 notion-checked-time/properties.js
+line-attendance/properties.js
 notion-checked-time/CoreUtils.js
 notion-checked-time/Props.js
 notion-checked-time/NotionApi.js

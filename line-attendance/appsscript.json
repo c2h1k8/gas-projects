@@ -1,0 +1,30 @@
+{
+  "timeZone": "Asia/Tokyo",
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Drive",
+        "serviceId": "drive",
+        "version": "v2"
+      }
+    ],
+    "libraries": [
+      {
+        "userSymbol": "DateUtils",
+        "libraryId": "1Atiputc7VmSCbwEnGgaiD_0ZgnjBo-IuT-MHQh-DV_-0A0vLG5AneE1o",
+        "version": "6"
+      },
+      {
+        "userSymbol": "LineUtil",
+        "libraryId": "1AGlk4JQPDNGOxKfJqyVOwWlH6M6TGm0fDxplKXdo5p8DMsQOzXCf5sYS",
+        "version": "13"
+      }
+    ]
+  },
+  "webapp": {
+    "executeAs": "USER_DEPLOYING",
+    "access": "ANYONE_ANONYMOUS"
+  }
+}
