@@ -41,5 +41,6 @@ copy_files "household-account" "notion-common" "NotionApi.js" "NotionPayload.js"
 copy_files "notion-checked-time" "common"       "CoreUtils.js" "Props.js"
 copy_files "notion-checked-time" "notion-common" "NotionApi.js" "NotionPayload.js"
 copy_files "line-attendance"     "common"        "CoreUtils.js" "Props.js" "GoogleApi.js" "LockUtil.js" "DateUtils.js"
+copy_files "gmail-auto-delete"  "common"        "CoreUtils.js" "Props.js" "SpreadUtils.js"
 
 echo "Done."

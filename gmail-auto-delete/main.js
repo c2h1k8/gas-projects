@@ -1,5 +1,4 @@
 const MainProc = (() => {
-  const props = PropertiesService.getScriptProperties().getProperties();
   const SHEET = {
     NAME: '設定',
     ROW_NO: {
@@ -90,8 +89,8 @@ const MainProc = (() => {
   }
   const getQueryOptions = () => {
     const sheet = SpreadsheetApp.getActiveSheet();
-    const endRow = Utils.getEndRow(sheet, SHEET.COL_NO.CHK);
-    const endCol = Utils.getEndCol(sheet, SHEET.ROW_NO.HEAD);
+    const endRow = SpreadUtils.getEndRow(sheet, SHEET.COL_NO.CHK);
+    const endCol = SpreadUtils.getEndCol(sheet, SHEET.ROW_NO.HEAD);
     const queryOptions = [];
     if (SHEET.ROW_NO.HEAD === endRow) return queryOptions;
     const datas = sheet.getRange(SHEET.ROW_NO.DATA, SHEET.COL_NO.CHK, endRow - SHEET.ROW_NO.HEAD, endCol - SHEET.COL_NO.CHK + 1).getValues();
@@ -132,7 +131,7 @@ const MainProc = (() => {
         for (const thread of threads) {
           for (const msg of thread.getMessages()) {
             trashMails.push(`${Utilities.formatDate(msg.getDate(), 'JST', 'yyyy-MM-dd HH:mm')}: ${msg.getSubject()}`);
-            if (props.DEBUG_MODE !== '1') {
+            if (Props.getValue(PKeys.DEBUG_MODE) !== '1') {
               msg.moveToTrash();
             }
           }

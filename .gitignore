@@ -4,6 +4,9 @@ household-account/823_properties.js
 notion-checked-time/properties.js
 line-attendance/properties.js
 gmail-auto-delete/properties.js
+gmail-auto-delete/CoreUtils.js
+gmail-auto-delete/Props.js
+gmail-auto-delete/SpreadUtils.js
 line-attendance/CoreUtils.js
 line-attendance/Props.js
 line-attendance/GoogleApi.js
