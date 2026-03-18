@@ -61,6 +61,9 @@ const MainProc = (function () {
     },
   }
 
+  // テストモードフラグ（スプレッドシート操作をスキップする）
+  let _testMode = false;
+
   const buildSignature_ = () => [
     '',
     '╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋┿╋',
@@ -491,9 +494,13 @@ const MainProc = (function () {
       // 終了時刻を更新しない場合、既存値を取得
       end = getTime(sheet.getRange(rowNo, COLUMN_META.END.NO).getValue());
     }
-    sheet.getRange(rowNo, COLUMN_META.TYPE.NO).setValue(type);
-    sheet.getRange(rowNo, COLUMN_META.START.NO).setValue(start);
-    sheet.getRange(rowNo, COLUMN_META.END.NO).setValue(end);
+    if (_testMode) {
+      Logger.log(`[TEST] updateTime: row=${rowNo}, type=${type}, start=${start}, end=${end}`);
+    } else {
+      sheet.getRange(rowNo, COLUMN_META.TYPE.NO).setValue(type);
+      sheet.getRange(rowNo, COLUMN_META.START.NO).setValue(start);
+      sheet.getRange(rowNo, COLUMN_META.END.NO).setValue(end);
+    }
     const diff = getTime(sheet.getRange(rowNo, COLUMN_META.DIFF.NO).getValue());
     const msg = [];
     msg.push(`日付: ${DateUtils.formatDate(date, "yyyy-MM-dd")}`);
@@ -622,7 +629,7 @@ const MainProc = (function () {
       // 当月ファイル検索
       const now = new Date();
       const ssFile = getFile(now);
-      if (ssFile) {
+      if (ssFile && !_testMode) {
         // 当月ファイルリネーム（バックアップ）
         const newFileName = `${Props.getValue(PKeys.FILE_NAME)}_${DateUtils.formatDate(now, 'yyyy年MM月分_yyyyMMddHHmm')}`;
         // ファイル名リネーム
@@ -630,12 +637,17 @@ const MainProc = (function () {
       }
 
       const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      let msg; 
+      let msg;
       let emoji;
       if (Props.hasJsonEntry(PKeys.FILE_MAP, DateUtils.formatDate(nextDate, 'yyyyMM'))) {
         // 作成済み
         msg = ['$ 既に作成済みです。'];
         emoji = LineManager.getNgMark()
+      } else if (_testMode) {
+        // テストモード: ファイル作成をスキップ
+        Logger.log('[TEST] makeWorkSchedule: 翌月ファイルの新規作成をスキップ');
+        msg = ['$ [テスト] 翌月ファイル作成をスキップしました。'];
+        emoji = LineManager.getHappinessMark()
       } else {
         // 翌月ファイルを作成
         copyFile(nextDate);
@@ -674,7 +686,7 @@ const MainProc = (function () {
       // メール送信
       const isSuccess = sendTimesheetMail(blob, date);
       if (isSuccess) {
-        Props.setValue(PKeys.LAST_SUBMIT_TIMESHEET, yyyyMM);
+        if (!_testMode) Props.setValue(PKeys.LAST_SUBMIT_TIMESHEET, yyyyMM);
         LineManager.reply(replyToken, `$ ${yyyyMM}分の勤務表を提出しました。`, LineManager.getHappinessMark());
       } else {
         LineManager.reply(replyToken, `$ ${yyyyMM}分の勤務表を提出できませんでした。`, LineManager.getAngryMark());
@@ -703,8 +715,6 @@ const MainProc = (function () {
 
     const lastName = Props.getValue(PKeys.NAME_LAST);
     const firstName = Props.getValue(PKeys.NAME_FIRST);
-    const to = Props.getValue(PKeys.ADDRESS_TO);
-
     const subject = `【勤怠表提出】${lastName}${firstName}_${yyyyMM}`;
     const body = [
       '各位',
@@ -719,7 +729,8 @@ const MainProc = (function () {
       `${lastName}`,
     ].join('\n');
 
-    return GoogleApi.sendEmail(JSON.parse(to), subject, body + buildSignature_(), getMailConfig_(), blob);
+    const toAddresses = _testMode ? [Props.getValue(PKeys.DEBUG_EMAIL)] : JSON.parse(Props.getValue(PKeys.ADDRESS_TO));
+    return GoogleApi.sendEmail(toAddresses, subject, body + buildSignature_(), getMailConfig_(), blob);
   };
 
   /**
@@ -775,7 +786,8 @@ const MainProc = (function () {
     subjectList.push(date)
 
     // メール送信
-    const isSuccess = GoogleApi.sendEmail(JSON.parse(Props.getValue(PKeys.ADDRESS_TO_FOR_REST)), subjectList.join(''), body + buildSignature_(), getMailConfig_());
+    const toAddresses = _testMode ? [Props.getValue(PKeys.DEBUG_EMAIL)] : JSON.parse(Props.getValue(PKeys.ADDRESS_TO_FOR_REST));
+    const isSuccess = GoogleApi.sendEmail(toAddresses, subjectList.join(''), body + buildSignature_(), getMailConfig_());
     if (isSuccess) {
       LineManager.reply(replyToken, `$ ${absenceType.LABEL}連絡を送信しました。`, LineManager.getHappinessMark());
     } else {
@@ -965,7 +977,9 @@ const MainProc = (function () {
       }, {
         date: DateUtils.formatDate(date, 'yyyy-MM-dd'),
       });
-    }
+    },
+    enableTestMode: () => { _testMode = true; },
+    disableTestMode: () => { _testMode = false; },
   }
 })();
 

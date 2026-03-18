@@ -47,4 +47,6 @@ const PKeys = {
   COMPANY_TEL: 'COMPANY_TEL',
   /** 会社URL */
   COMPANY_URL: 'COMPANY_URL',
+  /** デバッグ用メールアドレス */
+  DEBUG_EMAIL: 'DEBUG_EMAIL',
 };

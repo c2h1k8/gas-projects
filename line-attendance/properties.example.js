@@ -1,28 +1,16 @@
-const isDebug = false;
-
 /**
  * 手動実行で設定する
  * 実際の値は properties.js に記載（git管理外）
  */
 function setScriptProps() {
   Logger.log(Props.getAllValues());
-  const toAddress = [];
-  const toAddressRest = [];
-  if (isDebug) {
-    toAddress.push('YOUR_DEBUG_ADDRESS');
-    toAddressRest.push('YOUR_DEBUG_ADDRESS_REST');
-  } else {
-    toAddress.push('YOUR_ADDRESS_TO');
-    toAddressRest.push('YOUR_ADDRESS_TO_FOR_REST');
-  }
-
   Props.setValues({
     [PKeys.FILE_NAME]: 'YOUR_FILE_NAME',
     [PKeys.OUTPUT_DIR_ID]: 'YOUR_OUTPUT_DIR_ID',
     [PKeys.TEMPLATE_FILE_ID]: 'YOUR_TEMPLATE_FILE_ID',
     [PKeys.ADDRESS_FROM]: 'YOUR_ADDRESS_FROM',
-    [PKeys.ADDRESS_TO]: JSON.stringify(toAddress),
-    [PKeys.ADDRESS_TO_FOR_REST]: JSON.stringify(toAddressRest),
+    [PKeys.ADDRESS_TO]: JSON.stringify(['YOUR_ADDRESS_TO']),
+    [PKeys.ADDRESS_TO_FOR_REST]: JSON.stringify(['YOUR_ADDRESS_TO_FOR_REST']),
     [PKeys.NAME_LAST]: 'YOUR_NAME_LAST',
     [PKeys.NAME_FIRST]: 'YOUR_NAME_FIRST',
     [PKeys.NAME_ALPHA]: 'YOUR_NAME_ALPHA',
@@ -38,6 +26,7 @@ function setScriptProps() {
     [PKeys.ROUND_UNIT_CALC]: 30,
     [PKeys.LINE_CHANNEL_TOKEN]: 'YOUR_LINE_CHANNEL_TOKEN',
     [PKeys.LINE_USER_ID]: 'YOUR_LINE_USER_ID',
+    [PKeys.DEBUG_EMAIL]: 'YOUR_DEBUG_EMAIL',
   });
   Logger.log(Props.getAllValues());
 }

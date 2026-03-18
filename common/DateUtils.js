@@ -44,6 +44,13 @@ const DateUtils = (function () {
 
   return {
     /**
+     * 営業日かどうかを判定します。
+     * @param {Date} targetDate
+     * @returns {boolean}
+     */
+    isBizDate: (targetDate) => isBizDate_(targetDate),
+
+    /**
      * 前営業日を取得します。
      * @param {Date} targetDate
      * @param {boolean} [isInclude=true] 対象日付を含むかどうか
