@@ -108,10 +108,10 @@ const FlexCards = (() => {
           body.push({
             type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm', alignItems: 'center',
             contents: [
-              { type: 'box', layout: 'vertical', width: '10px', height: '10px', cornerRadius: '5px', backgroundColor: colorOf(r.type), flex: 0, contents: [text(' ', { size: 'xs' })] },
+              text('●', { size: 'sm', color: colorOf(r.type), flex: 0 }),
               text(r.dateLabel, { size: 'sm', color: DARK, flex: 3 }),
               text(r.time || r.type, { size: 'sm', color: GRAY, flex: 4 }),
-              text(r.kosu || '', { size: 'sm', color: DARK, align: 'end', flex: 2 }),
+              text(r.kosu || '-', { size: 'sm', color: DARK, align: 'end', flex: 2 }),
             ],
           });
         }
