@@ -400,13 +400,21 @@ const LineUtil = (function () {
     const rows = [];
     for (let i = 0; i < buttons.length; i += columns) {
       const rowContents = buttons.slice(i, i + columns).map((b) => ({
-        'type': 'button',
-        'style': 'secondary',
-        'height': 'sm',
+        // ボタンの代わりにタップ可能なボックスにし、ラベルを折り返して省略させない
+        'type': 'box',
+        'layout': 'vertical',
+        'flex': 1,
+        'backgroundColor': '#F2F4F8',
+        'cornerRadius': 'md',
+        'paddingAll': 'md',
+        'justifyContent': 'center',
         'action': makePostbackAction(b.label, b.data, b.displayText),
+        'contents': [
+          { 'type': 'text', 'text': b.label, 'size': 'sm', 'color': '#333840', 'align': 'center', 'wrap': true },
+        ],
       }));
       while (rowContents.length < columns) {
-        rowContents.push({ 'type': 'filler' });
+        rowContents.push({ 'type': 'box', 'layout': 'vertical', 'flex': 1, 'contents': [{ 'type': 'filler' }] });
       }
       rows.push({ 'type': 'box', 'layout': 'horizontal', 'spacing': 'sm', 'contents': rowContents });
     }

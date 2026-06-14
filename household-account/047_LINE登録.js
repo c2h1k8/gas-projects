@@ -4,7 +4,7 @@ const MainProcLineRegist = (() => {
   // 入力状態のキャッシュ保持秒数
   const STATE_TTL = 600;
   // 1行あたりのボタン数
-  const GRID_COLUMNS = 3;
+  const GRID_COLUMNS = 2;
 
   const cache = () => CacheService.getUserCache();
   const token = () => Props.getValue(PKeys.LINE_CHANNEL_TOKEN);
@@ -135,7 +135,15 @@ const MainProcLineRegist = (() => {
       contents.push({ type: 'text', text: '登録がありません', size: 'sm', color: '#888888', margin: 'md' });
     } else {
       for (const [cat, amt] of sorted) {
-        contents.push(row(cat, `${amt.toLocaleString()}円`));
+        contents.push({
+          type: 'box',
+          layout: 'horizontal',
+          margin: 'sm',
+          contents: [
+            { type: 'text', text: cat, size: 'sm', color: '#555555', flex: 7, wrap: true },
+            { type: 'text', text: `${amt.toLocaleString()}円`, size: 'sm', color: '#333333', align: 'end', flex: 3 },
+          ],
+        });
       }
     }
     return { type: 'bubble', body: { type: 'box', layout: 'vertical', spacing: 'sm', contents } };
