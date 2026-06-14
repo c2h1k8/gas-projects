@@ -49,9 +49,4 @@ const PKeys = {
   COMPANY_URL: 'COMPANY_URL',
   /** デバッグ用メールアドレス */
   DEBUG_EMAIL: 'DEBUG_EMAIL',
-
-  /** リッチメニュー画像A（DriveファイルID） */
-  RICHMENU_IMG_A_ID: 'RICHMENU_IMG_A_ID',
-  /** リッチメニュー画像B（DriveファイルID） */
-  RICHMENU_IMG_B_ID: 'RICHMENU_IMG_B_ID',
 };

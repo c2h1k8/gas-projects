@@ -2,13 +2,17 @@
  * リッチメニュー（2ページ・タブ切替）をAPIで登録するセットアップ。
  *
  * 事前準備:
- *   1) リッチメニュー画像A/Bを Google Drive にアップロード
- *   2) スクリプトプロパティに DriveファイルIDを設定
- *        RICHMENU_IMG_A_ID / RICHMENU_IMG_B_ID
- *   3) 本関数 SetupRichMenu を一度だけ実行
+ *   1) 下記の名前で画像を Google Drive にアップロード（フォルダはどこでもOK）
+ *        RICHMENU_IMG_A_NAME / RICHMENU_IMG_B_NAME
+ *   2) 本関数 SetupRichMenu を一度だけ実行
  *
+ * 画像はファイル名でDrive全体から検索するため、ファイルIDやフォルダ指定は不要です。
  * 何度実行しても良いように、既存のメニュー・エイリアスは削除してから作り直します。
  */
+
+// Driveに置くリッチメニュー画像のファイル名（一意にしておくこと）
+const RICHMENU_IMG_A_NAME = 'line-attendance-richmenu-a.png';
+const RICHMENU_IMG_B_NAME = 'line-attendance-richmenu-b.png';
 
 const RICHMENU_SIZE = { width: 1200, height: 810 };
 
@@ -58,11 +62,9 @@ function SetupRichMenu() {
   const idA = LineUtil.createRichMenu(token, RICHMENU_A);
   const idB = LineUtil.createRichMenu(token, RICHMENU_B);
 
-  // 画像アップロード（Driveのファイルから）
-  const blobA = DriveApp.getFileById(Props.getValue(PKeys.RICHMENU_IMG_A_ID)).getBlob();
-  const blobB = DriveApp.getFileById(Props.getValue(PKeys.RICHMENU_IMG_B_ID)).getBlob();
-  LineUtil.uploadRichMenuImage(token, idA, blobA);
-  LineUtil.uploadRichMenuImage(token, idB, blobB);
+  // 画像アップロード（Driveからファイル名で検索）
+  LineUtil.uploadRichMenuImage(token, idA, getImageBlobByName_(RICHMENU_IMG_A_NAME));
+  LineUtil.uploadRichMenuImage(token, idB, getImageBlobByName_(RICHMENU_IMG_B_NAME));
 
   // エイリアス（A↔B切替用）
   LineUtil.createRichMenuAlias(token, 'richmenu-alias-a', idA);
@@ -72,4 +74,16 @@ function SetupRichMenu() {
   LineUtil.setDefaultRichMenu(token, idA);
 
   Logger.log(`リッチメニュー登録完了 A=${idA} B=${idB}`);
+}
+
+/**
+ * ファイル名でDrive全体から画像を検索し Blob を返します。
+ * 0件・複数件はエラー（名前を一意にしてください）。
+ */
+function getImageBlobByName_(name) {
+  const it = DriveApp.getFilesByName(name);
+  if (!it.hasNext()) throw new Error(`画像が見つかりません: ${name}`);
+  const file = it.next();
+  if (it.hasNext()) throw new Error(`同名ファイルが複数あります: ${name}（一意にしてください）`);
+  return file.getBlob();
 }
