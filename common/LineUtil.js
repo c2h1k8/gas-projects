@@ -334,6 +334,97 @@ const LineUtil = (function () {
   }
 
   /**
+   * Flexメッセージを送信します（リプライ）。
+   * https://developers.line.biz/ja/reference/messaging-api/#flex-message
+   * @param token チャネルトークン
+   * @param replyToken リプライトークン
+   * @param altText 代替テキスト
+   * @param contents Flexコンテンツ（bubble または carousel）
+   * @return HTTPレスポンスデータ
+   */
+  function replyFlex(token, replyToken, altText, contents) {
+    return reply(token, replyToken, getFlexData(altText, contents));
+  }
+  /**
+   * Flexメッセージを送信します（プッシュ）。
+   * @param token チャネルトークン
+   * @param userId ユーザID
+   * @param altText 代替テキスト
+   * @param contents Flexコンテンツ（bubble または carousel）
+   * @return HTTPレスポンスデータ
+   */
+  function postFlex(token, userId, altText, contents) {
+    return push(token, userId, getFlexData(altText, contents));
+  }
+  /**
+   * 送信するFlexメッセージデータを生成します。
+   * @param altText 代替テキスト
+   * @param contents Flexコンテンツ
+   * @return メッセージデータ
+   */
+  function getFlexData(altText, contents) {
+    return {
+      'messages': [
+        {
+          'type': 'flex',
+          'altText': altText,
+          'contents': contents,
+        }
+      ]
+    };
+  }
+  /**
+   * postbackアクションを生成します。
+   * @param label ボタンラベル（最大20文字）
+   * @param data postbackデータ（最大300文字）
+   * @param displayText タップ時にトークに表示するテキスト（任意）
+   * @return アクションオブジェクト
+   */
+  function makePostbackAction(label, data, displayText = '') {
+    const action = {
+      'type': 'postback',
+      'label': label,
+      'data': data,
+    };
+    if (displayText) action.displayText = displayText;
+    return action;
+  }
+  /**
+   * ボタンをグリッド配置したFlex bubbleを生成します。
+   * @param title 見出しテキスト
+   * @param buttons ボタン配列 [{ label, data, displayText }]
+   * @param columns 1行あたりのボタン数（既定3）
+   * @return Flex bubble
+   */
+  function getFlexButtonGrid(title, buttons, columns = 3) {
+    const rows = [];
+    for (let i = 0; i < buttons.length; i += columns) {
+      const rowContents = buttons.slice(i, i + columns).map((b) => ({
+        'type': 'button',
+        'style': 'secondary',
+        'height': 'sm',
+        'action': makePostbackAction(b.label, b.data, b.displayText),
+      }));
+      while (rowContents.length < columns) {
+        rowContents.push({ 'type': 'filler' });
+      }
+      rows.push({ 'type': 'box', 'layout': 'horizontal', 'spacing': 'sm', 'contents': rowContents });
+    }
+    return {
+      'type': 'bubble',
+      'body': {
+        'type': 'box',
+        'layout': 'vertical',
+        'spacing': 'md',
+        'contents': [
+          { 'type': 'text', 'text': title, 'weight': 'bold', 'size': 'md', 'wrap': true },
+          { 'type': 'box', 'layout': 'vertical', 'spacing': 'sm', 'contents': rows },
+        ],
+      },
+    };
+  }
+
+  /**
    * メッセージテキストを取得します。
    * @param msg メッセージオブジェクト
    * @return メッセージテキスト
@@ -405,5 +496,10 @@ const LineUtil = (function () {
     getCarouselData,
     getEmojiJson,
     makeQuickReply,
+    replyFlex,
+    postFlex,
+    getFlexData,
+    makePostbackAction,
+    getFlexButtonGrid,
   };
 })();
