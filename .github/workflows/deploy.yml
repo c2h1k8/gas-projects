@@ -5,10 +5,26 @@ on:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
-      projects:
-        description: 'push対象プロジェクト（スペース区切り / all で全部）'
-        required: true
-        default: 'all'
+      all:
+        description: '全プロジェクトを対象にする（ONなら個別選択は無視）'
+        type: boolean
+        default: true
+      line-attendance:
+        description: 'line-attendance'
+        type: boolean
+        default: false
+      household-account:
+        description: 'household-account'
+        type: boolean
+        default: false
+      notion-checked-time:
+        description: 'notion-checked-time'
+        type: boolean
+        default: false
+      gmail-auto-delete:
+        description: 'gmail-auto-delete'
+        type: boolean
+        default: false
 
 # 同一ブランチの多重実行を防ぐ（後勝ち）
 concurrency:
@@ -45,11 +61,25 @@ jobs:
       - name: Copy common files
         run: bash scripts/copy-common.sh
 
+      # 手動実行のチェックボックス入力を対象プロジェクト文字列に変換
+      - name: Resolve manual targets
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ inputs.all }}" = "true" ]; then
+            echo "DISPATCH_PROJECTS=all" >> "$GITHUB_ENV"
+          else
+            sel=""
+            [ "${{ inputs['line-attendance'] }}" = "true" ]   && sel="$sel line-attendance"
+            [ "${{ inputs['household-account'] }}" = "true" ]  && sel="$sel household-account"
+            [ "${{ inputs['notion-checked-time'] }}" = "true" ] && sel="$sel notion-checked-time"
+            [ "${{ inputs['gmail-auto-delete'] }}" = "true" ]  && sel="$sel gmail-auto-delete"
+            echo "DISPATCH_PROJECTS=$(echo $sel | xargs)" >> "$GITHUB_ENV"
+          fi
+
       - name: Push to GAS
         run: bash scripts/ci-deploy.sh
         env:
           SCRIPT_IDS: ${{ secrets.CLASP_SCRIPT_IDS }}
           EVENT_NAME: ${{ github.event_name }}
-          DISPATCH_PROJECTS: ${{ github.event.inputs.projects }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
