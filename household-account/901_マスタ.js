@@ -141,14 +141,33 @@ const MainProcMaster = (() => {
     return resultMap;
   }
 
+  /**
+   * 手動入力列（LINE用選択肢）の名前付き範囲を、入力済みデータ範囲に合わせて更新します。
+   * 列のデータは上書きせず、見出し名で名前付き範囲だけ張り直します。
+   */
+  const registManualRange = (sheet, colNo, name) => {
+    const rowEnd = SpreadUtils.getEndRow(sheet, colNo);
+    if (rowEnd < Constants.SHEET_MASTER.ROW.DATA) return; // データなし
+    const rng = sheet.getRange(
+      Constants.SHEET_MASTER.ROW.DATA, colNo,
+      rowEnd - Constants.SHEET_MASTER.ROW.HEADER, 1
+    );
+    SpreadsheetApp.getActiveSpreadsheet().setNamedRange(name, rng);
+  }
+
   return {
     update: () => {
-      // データ取得
-      const resultMap = getData()
       const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(Constants.SHEET_MASTER.NAME);
-      for (const key of resultMap.keys()) {
-        outSheet(sheet, key, resultMap.get(key));
+      // 自動取得列（Notion等）を出力
+      const resultMap = getData()
+      if (resultMap) {
+        for (const key of resultMap.keys()) {
+          outSheet(sheet, key, resultMap.get(key));
+        }
       }
+      // LINE用選択肢（手動入力 H/I）の名前付き範囲を反映
+      registManualRange(sheet, Constants.SHEET_MASTER.COL.LINE_CATEGORY, Constants.SHEET_MASTER.RNG_NAME.LINE_CATEGORY);
+      registManualRange(sheet, Constants.SHEET_MASTER.COL.LINE_METHOD_PAY, Constants.SHEET_MASTER.RNG_NAME.LINE_METHOD_PAY);
     },
   };
 })();

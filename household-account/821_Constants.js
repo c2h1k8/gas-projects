@@ -62,9 +62,13 @@ const Constants = (function () {
         SHOP: 5,
         METHOD_PAY: 6,
         PRODUCT: 7,
+        LINE_CATEGORY: 8,
+        LINE_METHOD_PAY: 9,
       },
       RNG_NAME: {
         EXCEPT_WORD: '除外ワード',
+        LINE_CATEGORY: 'Lineカテゴリ',
+        LINE_METHOD_PAY: 'Line支払方法',
       },
     },
   }

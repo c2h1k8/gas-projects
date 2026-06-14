@@ -217,7 +217,7 @@ const MainProcLineRegist = (() => {
       amount: Number(m[1].replace(/,/g, '')),
       note: m[2] ? m[2].trim() : '',
     };
-    const categories = sortByUsage(getMasterList(Constants.PROPERTY_SPENDING.CATEGORY), 'cat');
+    const categories = sortByUsage(getMasterList(Constants.SHEET_MASTER.RNG_NAME.LINE_CATEGORY), 'cat');
     if (categories.length === 0) {
       replyText(replyToken, 'カテゴリのマスタが見つかりませんでした。');
       return;
@@ -246,7 +246,7 @@ const MainProcLineRegist = (() => {
         if (!state) return replyText(replyToken, '入力の有効期限が切れました。最初からやり直してください。');
         state.category = data.v;
         cache().put(data.k, JSON.stringify(state), STATE_TTL);
-        const methods = sortByUsage(getMasterList(Constants.PROPERTY_SPENDING.METHOD_PAY), 'pay');
+        const methods = sortByUsage(getMasterList(Constants.SHEET_MASTER.RNG_NAME.LINE_METHOD_PAY), 'pay');
         if (methods.length === 0) return replyText(replyToken, '支払方法のマスタが見つかりませんでした。');
         replySelect(replyToken, '支払方法を選択', methods, 'pay', data.k);
         return;
