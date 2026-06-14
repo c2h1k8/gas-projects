@@ -16,11 +16,12 @@ ALL_PROJECTS=$(echo "$SCRIPT_IDS" | jq -r 'keys[]')
 
 determine_targets() {
   if [ "${EVENT_NAME:-}" = "workflow_dispatch" ]; then
-    if [ -z "${DISPATCH_PROJECTS:-}" ] || [ "${DISPATCH_PROJECTS}" = "all" ]; then
+    if [ "${DISPATCH_PROJECTS:-}" = "all" ]; then
       echo "$ALL_PROJECTS"
-    else
+    elif [ -n "${DISPATCH_PROJECTS:-}" ]; then
       echo "$DISPATCH_PROJECTS" | tr ' ' '\n' | sed '/^$/d'
     fi
+    # 何も選択されていない場合は対象なし（出力なし）
     return
   fi
 
