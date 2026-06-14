@@ -28,4 +28,7 @@ const PKeys = {
 
   /** GitHubトークン */
   GITHUB_TOKEN: 'GITHUB_TOKEN',
+
+  /** 選択肢の使用回数（JSON: { cat: {名前:回数}, pay: {名前:回数} }） */
+  SELECT_USAGE: 'SELECT_USAGE',
 };

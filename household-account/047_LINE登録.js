@@ -37,6 +37,27 @@ const MainProcLineRegist = (() => {
     return rng.getValues().flat().filter((v) => v !== '' && v !== null);
   };
 
+  // ---- 選択肢の使用頻度（よく使う順に並べる） ----
+  const getUsage = () => {
+    const raw = Props.getValue(PKeys.SELECT_USAGE);
+    return raw ? JSON.parse(raw) : {};
+  };
+  const bumpUsage = (kind, value) => {
+    if (!value) return;
+    const u = getUsage();
+    u[kind] = u[kind] || {};
+    u[kind][value] = (u[kind][value] || 0) + 1;
+    Props.setValue(PKeys.SELECT_USAGE, JSON.stringify(u));
+  };
+  // 使用回数の降順（同数はマスタの元順を維持する安定ソート）
+  const sortByUsage = (items, kind) => {
+    const counts = getUsage()[kind] || {};
+    return items
+      .map((v, i) => ({ v, i, c: counts[String(v)] || 0 }))
+      .sort((a, b) => b.c - a.c || a.i - b.i)
+      .map((x) => x.v);
+  };
+
   /**
    * 選択肢を返信します。
    * 13件以内はクイックリプライ（高さゼロ・1タップ）、超過時はFlexグリッドにフォールバック。
@@ -196,7 +217,7 @@ const MainProcLineRegist = (() => {
       amount: Number(m[1].replace(/,/g, '')),
       note: m[2] ? m[2].trim() : '',
     };
-    const categories = getMasterList(Constants.PROPERTY_SPENDING.CATEGORY);
+    const categories = sortByUsage(getMasterList(Constants.PROPERTY_SPENDING.CATEGORY), 'cat');
     if (categories.length === 0) {
       replyText(replyToken, 'カテゴリのマスタが見つかりませんでした。');
       return;
@@ -225,7 +246,7 @@ const MainProcLineRegist = (() => {
         if (!state) return replyText(replyToken, '入力の有効期限が切れました。最初からやり直してください。');
         state.category = data.v;
         cache().put(data.k, JSON.stringify(state), STATE_TTL);
-        const methods = getMasterList(Constants.PROPERTY_SPENDING.METHOD_PAY);
+        const methods = sortByUsage(getMasterList(Constants.PROPERTY_SPENDING.METHOD_PAY), 'pay');
         if (methods.length === 0) return replyText(replyToken, '支払方法のマスタが見つかりませんでした。');
         replySelect(replyToken, '支払方法を選択', methods, 'pay', data.k);
         return;
@@ -245,6 +266,9 @@ const MainProcLineRegist = (() => {
         const res = NotionApi.createPage(page);
         if (res && res.id) {
           cache().remove(data.k);
+          // よく使う順の並べ替え用に使用回数を記録
+          bumpUsage('cat', state.category);
+          bumpUsage('pay', state.method);
           replyFlex(replyToken, '登録しました', buildConfirmCard(state, res.id));
         } else {
           replyText(replyToken, '登録に失敗しました。');
