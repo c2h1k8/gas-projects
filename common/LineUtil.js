@@ -425,6 +425,86 @@ const LineUtil = (function () {
   }
 
   /**
+   * リッチメニュー一覧を取得します。
+   */
+  function getRichMenuList(token) {
+    const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/richmenu/list', {
+      'method': 'get',
+      'headers': { 'Authorization': `Bearer ${token}` },
+      'muteHttpExceptions': true,
+    });
+    return JSON.parse(res.getContentText()).richmenus || [];
+  }
+  /**
+   * リッチメニューを作成し richMenuId を返します。
+   */
+  function createRichMenu(token, richMenu) {
+    const res = post('https://api.line.me/v2/bot/richmenu', token, richMenu);
+    return JSON.parse(res.getContentText()).richMenuId;
+  }
+  /**
+   * リッチメニューを削除します。
+   */
+  function deleteRichMenu(token, richMenuId) {
+    return UrlFetchApp.fetch(`https://api.line.me/v2/bot/richmenu/${richMenuId}`, {
+      'method': 'delete',
+      'headers': { 'Authorization': `Bearer ${token}` },
+      'muteHttpExceptions': true,
+    });
+  }
+  /**
+   * リッチメニューに画像を設定します。
+   * @param blob 画像Blob（image/png または image/jpeg、サイズはメニューと一致）
+   */
+  function uploadRichMenuImage(token, richMenuId, blob) {
+    const url = `https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`;
+    const res = UrlFetchApp.fetch(url, {
+      'method': 'post',
+      'headers': { 'Authorization': `Bearer ${token}` },
+      'contentType': blob.getContentType(),
+      'payload': blob.getBytes(),
+      'muteHttpExceptions': true,
+    });
+    if (res.getResponseCode() !== 200) {
+      throw new Error(`uploadRichMenuImage: ${res.getResponseCode()} - ${res.getContentText()}`);
+    }
+    return res;
+  }
+  /**
+   * リッチメニューエイリアスを作成します。
+   */
+  function createRichMenuAlias(token, aliasId, richMenuId) {
+    return post('https://api.line.me/v2/bot/richmenu/alias', token, {
+      'richMenuAliasId': aliasId,
+      'richMenuId': richMenuId,
+    });
+  }
+  /**
+   * リッチメニューエイリアスを削除します。
+   */
+  function deleteRichMenuAlias(token, aliasId) {
+    return UrlFetchApp.fetch(`https://api.line.me/v2/bot/richmenu/alias/${aliasId}`, {
+      'method': 'delete',
+      'headers': { 'Authorization': `Bearer ${token}` },
+      'muteHttpExceptions': true,
+    });
+  }
+  /**
+   * 全ユーザーのデフォルトリッチメニューを設定します。
+   */
+  function setDefaultRichMenu(token, richMenuId) {
+    const res = UrlFetchApp.fetch(`https://api.line.me/v2/bot/user/all/richmenu/${richMenuId}`, {
+      'method': 'post',
+      'headers': { 'Authorization': `Bearer ${token}` },
+      'muteHttpExceptions': true,
+    });
+    if (res.getResponseCode() !== 200) {
+      throw new Error(`setDefaultRichMenu: ${res.getResponseCode()} - ${res.getContentText()}`);
+    }
+    return res;
+  }
+
+  /**
    * メッセージテキストを取得します。
    * @param msg メッセージオブジェクト
    * @return メッセージテキスト
@@ -501,5 +581,12 @@ const LineUtil = (function () {
     getFlexData,
     makePostbackAction,
     getFlexButtonGrid,
+    getRichMenuList,
+    createRichMenu,
+    deleteRichMenu,
+    uploadRichMenuImage,
+    createRichMenuAlias,
+    deleteRichMenuAlias,
+    setDefaultRichMenu,
   };
 })();
