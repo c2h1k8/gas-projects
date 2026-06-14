@@ -3,8 +3,13 @@ const MainProcLineRegist = (() => {
   const TITLE = 'Line自動登録';
   // 入力状態のキャッシュ保持秒数
   const STATE_TTL = 600;
-  // 1行あたりのボタン数
-  const GRID_COLUMNS = 3;
+  // フォールバックFlexグリッドの列数
+  const GRID_COLUMNS = 2;
+  // クイックリプライの最大件数（超過時はカルーセルにフォールバック）
+  const QUICK_REPLY_MAX = 13;
+  // カルーセル1カードあたりの件数とカード数上限
+  const CAROUSEL_PAGE = 8;
+  const CAROUSEL_MAX = 12;
 
   const cache = () => CacheService.getUserCache();
   const token = () => Props.getValue(PKeys.LINE_CHANNEL_TOKEN);
@@ -21,6 +26,7 @@ const MainProcLineRegist = (() => {
 
   const replyText = (replyToken, msg) => LineUtil.replyText(token(), replyToken, msg);
   const replyFlex = (replyToken, altText, contents) => LineUtil.replyFlex(token(), replyToken, altText, contents);
+  const replyQuick = (replyToken, msg, actions) => LineUtil.replyQuickText(token(), replyToken, msg, actions);
 
   /**
    * マスタの名前付き範囲から選択肢一覧を取得します。
@@ -31,17 +37,54 @@ const MainProcLineRegist = (() => {
     return rng.getValues().flat().filter((v) => v !== '' && v !== null);
   };
 
+  // ---- 選択肢の使用頻度（よく使う順に並べる） ----
+  const getUsage = () => {
+    const raw = Props.getValue(PKeys.SELECT_USAGE);
+    return raw ? JSON.parse(raw) : {};
+  };
+  const bumpUsage = (kind, value) => {
+    if (!value) return;
+    const u = getUsage();
+    u[kind] = u[kind] || {};
+    u[kind][value] = (u[kind][value] || 0) + 1;
+    Props.setValue(PKeys.SELECT_USAGE, JSON.stringify(u));
+  };
+  // 使用回数の降順（同数はマスタの元順を維持する安定ソート）
+  const sortByUsage = (items, kind) => {
+    const counts = getUsage()[kind] || {};
+    return items
+      .map((v, i) => ({ v, i, c: counts[String(v)] || 0 }))
+      .sort((a, b) => b.c - a.c || a.i - b.i)
+      .map((x) => x.v);
+  };
+
   /**
-   * 選択肢からFlexボタングリッドを返信します。
+   * 選択肢を返信します。
+   * 13件以内はクイックリプライ（高さゼロ・1タップ）、超過時はFlexグリッドにフォールバック。
    */
-  const replySelectGrid = (replyToken, title, items, step, stateKey) => {
-    const buttons = items.map((v) => ({
-      label: String(v),
-      data: JSON.stringify({ s: step, k: stateKey, v: String(v) }),
-      displayText: String(v),
-    }));
-    const bubble = LineUtil.getFlexButtonGrid(title, buttons, GRID_COLUMNS);
-    replyFlex(replyToken, title, bubble);
+  const replySelect = (replyToken, title, items, step, stateKey) => {
+    const dataOf = (v) => JSON.stringify({ s: step, k: stateKey, v: String(v) });
+
+    if (items.length <= QUICK_REPLY_MAX) {
+      const actions = items.map((v) => LineUtil.makeQuickReply({
+        type: 'postback',
+        label: String(v).slice(0, 20), // クイックリプライのラベルは最大20文字
+        data: dataOf(v),
+        displayText: String(v),
+      }));
+      replyQuick(replyToken, title, actions);
+      return;
+    }
+
+    // 14件以上はカルーセル（横スワイプ）。1カードあたり CAROUSEL_PAGE 件。
+    const pages = Math.ceil(items.length / CAROUSEL_PAGE);
+    const bubbles = [];
+    for (let i = 0; i < items.length && bubbles.length < CAROUSEL_MAX; i += CAROUSEL_PAGE) {
+      const chunk = items.slice(i, i + CAROUSEL_PAGE).map((v) => ({ label: String(v), data: dataOf(v), displayText: String(v) }));
+      const pageNo = Math.floor(i / CAROUSEL_PAGE) + 1;
+      bubbles.push(LineUtil.getFlexButtonGrid(`${title}  (${pageNo}/${pages})`, chunk, GRID_COLUMNS));
+    }
+    replyFlex(replyToken, title, { type: 'carousel', contents: bubbles });
   };
 
   const row = (key, value) => ({
@@ -135,7 +178,15 @@ const MainProcLineRegist = (() => {
       contents.push({ type: 'text', text: '登録がありません', size: 'sm', color: '#888888', margin: 'md' });
     } else {
       for (const [cat, amt] of sorted) {
-        contents.push(row(cat, `${amt.toLocaleString()}円`));
+        contents.push({
+          type: 'box',
+          layout: 'horizontal',
+          margin: 'sm',
+          contents: [
+            { type: 'text', text: cat, size: 'sm', color: '#555555', flex: 7, wrap: true },
+            { type: 'text', text: `${amt.toLocaleString()}円`, size: 'sm', color: '#333333', align: 'end', flex: 3 },
+          ],
+        });
       }
     }
     return { type: 'bubble', body: { type: 'box', layout: 'vertical', spacing: 'sm', contents } };
@@ -166,14 +217,14 @@ const MainProcLineRegist = (() => {
       amount: Number(m[1].replace(/,/g, '')),
       note: m[2] ? m[2].trim() : '',
     };
-    const categories = getMasterList(Constants.PROPERTY_SPENDING.CATEGORY);
+    const categories = sortByUsage(getMasterList(Constants.SHEET_MASTER.RNG_NAME.LINE_CATEGORY), 'cat');
     if (categories.length === 0) {
       replyText(replyToken, 'カテゴリのマスタが見つかりませんでした。');
       return;
     }
     const stateKey = Utilities.getUuid().slice(0, 8);
     cache().put(stateKey, JSON.stringify(state), STATE_TTL);
-    replySelectGrid(replyToken, `カテゴリを選択（${state.amount.toLocaleString()}円）`, categories, 'cat', stateKey);
+    replySelect(replyToken, `カテゴリを選択（${state.amount.toLocaleString()}円）`, categories, 'cat', stateKey);
   };
 
   /**
@@ -195,9 +246,9 @@ const MainProcLineRegist = (() => {
         if (!state) return replyText(replyToken, '入力の有効期限が切れました。最初からやり直してください。');
         state.category = data.v;
         cache().put(data.k, JSON.stringify(state), STATE_TTL);
-        const methods = getMasterList(Constants.PROPERTY_SPENDING.METHOD_PAY);
+        const methods = sortByUsage(getMasterList(Constants.SHEET_MASTER.RNG_NAME.LINE_METHOD_PAY), 'pay');
         if (methods.length === 0) return replyText(replyToken, '支払方法のマスタが見つかりませんでした。');
-        replySelectGrid(replyToken, '支払方法を選択', methods, 'pay', data.k);
+        replySelect(replyToken, '支払方法を選択', methods, 'pay', data.k);
         return;
       }
       case 'pay': {
@@ -215,6 +266,9 @@ const MainProcLineRegist = (() => {
         const res = NotionApi.createPage(page);
         if (res && res.id) {
           cache().remove(data.k);
+          // よく使う順の並べ替え用に使用回数を記録
+          bumpUsage('cat', state.category);
+          bumpUsage('pay', state.method);
           replyFlex(replyToken, '登録しました', buildConfirmCard(state, res.id));
         } else {
           replyText(replyToken, '登録に失敗しました。');
