@@ -108,13 +108,36 @@ const FlexCards = (() => {
           body.push({
             type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm', alignItems: 'center',
             contents: [
-              { type: 'box', layout: 'vertical', width: '10px', height: '10px', cornerRadius: '5px', backgroundColor: colorOf(r.type), flex: 0, contents: [text(' ', { size: 'xs' })] },
+              text('●', { size: 'sm', color: colorOf(r.type), flex: 0 }),
               text(r.dateLabel, { size: 'sm', color: DARK, flex: 3 }),
               text(r.time || r.type, { size: 'sm', color: GRAY, flex: 4 }),
-              text(r.kosu || '', { size: 'sm', color: DARK, align: 'end', flex: 2 }),
+              text(r.kosu || '-', { size: 'sm', color: DARK, align: 'end', flex: 2 }),
             ],
           });
         }
+      }
+      return shell(BLUE, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
+    },
+
+    /**
+     * 月別推移カード（過去Nヶ月の合計・残業）。
+     * @param {{title, rows}} p  rows: [{ label, total, overtime, current }]
+     */
+    history: ({ title, rows }) => {
+      const body = [];
+      if (!rows || rows.length === 0) {
+        body.push(text('データがありません', { size: 'sm', color: GRAY, align: 'center' }));
+      } else {
+        rows.forEach((r, i) => {
+          body.push({
+            type: 'box', layout: 'horizontal', alignItems: 'center', margin: i > 0 ? 'md' : 'none',
+            contents: [
+              text(r.label, { size: 'sm', weight: r.current ? 'bold' : 'regular', color: r.current ? BLUE : DARK, flex: 3 }),
+              text(r.total, { size: 'sm', color: DARK, align: 'end', flex: 3 }),
+              text(`残業 ${r.overtime}`, { size: 'xs', color: GRAY, align: 'end', gravity: 'center', flex: 4 }),
+            ],
+          });
+        });
       }
       return shell(BLUE, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
     },

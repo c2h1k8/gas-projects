@@ -41,7 +41,7 @@ const RICHMENU_B = {
     { bounds: { x: 0, y: 0, width: 600, height: 90 }, action: { type: 'richmenuswitch', richMenuAliasId: 'richmenu-alias-a', data: '{"action":"richmenu-alias-a"}' } },
     { bounds: { x: 0, y: 90, width: 400, height: 360 }, action: { type: 'postback', data: '{"action":"list","month":""}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 400, y: 90, width: 400, height: 360 }, action: { type: 'postback', data: '{"action":"list","month":"1"}', inputOption: 'closeRichMenu' } },
-    { bounds: { x: 800, y: 90, width: 400, height: 360 }, action: { type: 'postback', data: '{"action":"list","month":"2"}', inputOption: 'closeRichMenu' } },
+    { bounds: { x: 800, y: 90, width: 400, height: 360 }, action: { type: 'postback', data: '{"action":"history"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 0, y: 450, width: 400, height: 360 }, action: { type: 'datetimepicker', data: '{"action":"absence-mail"}', mode: 'date', inputOption: 'closeRichMenu' } },
     { bounds: { x: 400, y: 450, width: 400, height: 360 }, action: { type: 'postback', data: '{"action":"handin"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 800, y: 450, width: 400, height: 360 }, action: { type: 'postback', data: '{"action":"help"}', inputOption: 'closeRichMenu' } },

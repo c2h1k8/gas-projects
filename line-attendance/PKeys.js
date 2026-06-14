@@ -49,4 +49,7 @@ const PKeys = {
   COMPANY_URL: 'COMPANY_URL',
   /** デバッグ用メールアドレス */
   DEBUG_EMAIL: 'DEBUG_EMAIL',
+
+  /** 月別合計/残業のキャッシュ（JSON: { yyyyMM: { total, overtime } }） */
+  MONTH_SUMMARY_CACHE: 'MONTH_SUMMARY_CACHE',
 };
