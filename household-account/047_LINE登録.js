@@ -3,8 +3,10 @@ const MainProcLineRegist = (() => {
   const TITLE = 'Line自動登録';
   // 入力状態のキャッシュ保持秒数
   const STATE_TTL = 600;
-  // 1行あたりのボタン数
+  // フォールバックFlexグリッドの列数
   const GRID_COLUMNS = 2;
+  // クイックリプライの最大件数（超過時はFlexグリッドにフォールバック）
+  const QUICK_REPLY_MAX = 13;
 
   const cache = () => CacheService.getUserCache();
   const token = () => Props.getValue(PKeys.LINE_CHANNEL_TOKEN);
@@ -21,6 +23,7 @@ const MainProcLineRegist = (() => {
 
   const replyText = (replyToken, msg) => LineUtil.replyText(token(), replyToken, msg);
   const replyFlex = (replyToken, altText, contents) => LineUtil.replyFlex(token(), replyToken, altText, contents);
+  const replyQuick = (replyToken, msg, actions) => LineUtil.replyQuickText(token(), replyToken, msg, actions);
 
   /**
    * マスタの名前付き範囲から選択肢一覧を取得します。
@@ -32,16 +35,26 @@ const MainProcLineRegist = (() => {
   };
 
   /**
-   * 選択肢からFlexボタングリッドを返信します。
+   * 選択肢を返信します。
+   * 13件以内はクイックリプライ（高さゼロ・1タップ）、超過時はFlexグリッドにフォールバック。
    */
-  const replySelectGrid = (replyToken, title, items, step, stateKey) => {
-    const buttons = items.map((v) => ({
-      label: String(v),
-      data: JSON.stringify({ s: step, k: stateKey, v: String(v) }),
-      displayText: String(v),
-    }));
-    const bubble = LineUtil.getFlexButtonGrid(title, buttons, GRID_COLUMNS);
-    replyFlex(replyToken, title, bubble);
+  const replySelect = (replyToken, title, items, step, stateKey) => {
+    const dataOf = (v) => JSON.stringify({ s: step, k: stateKey, v: String(v) });
+
+    if (items.length <= QUICK_REPLY_MAX) {
+      const actions = items.map((v) => LineUtil.makeQuickReply({
+        type: 'postback',
+        label: String(v).slice(0, 20), // クイックリプライのラベルは最大20文字
+        data: dataOf(v),
+        displayText: String(v),
+      }));
+      replyQuick(replyToken, title, actions);
+      return;
+    }
+
+    // 14件以上はFlexグリッド
+    const buttons = items.map((v) => ({ label: String(v), data: dataOf(v), displayText: String(v) }));
+    replyFlex(replyToken, title, LineUtil.getFlexButtonGrid(title, buttons, GRID_COLUMNS));
   };
 
   const row = (key, value) => ({
@@ -181,7 +194,7 @@ const MainProcLineRegist = (() => {
     }
     const stateKey = Utilities.getUuid().slice(0, 8);
     cache().put(stateKey, JSON.stringify(state), STATE_TTL);
-    replySelectGrid(replyToken, `カテゴリを選択（${state.amount.toLocaleString()}円）`, categories, 'cat', stateKey);
+    replySelect(replyToken, `カテゴリを選択（${state.amount.toLocaleString()}円）`, categories, 'cat', stateKey);
   };
 
   /**
@@ -205,7 +218,7 @@ const MainProcLineRegist = (() => {
         cache().put(data.k, JSON.stringify(state), STATE_TTL);
         const methods = getMasterList(Constants.PROPERTY_SPENDING.METHOD_PAY);
         if (methods.length === 0) return replyText(replyToken, '支払方法のマスタが見つかりませんでした。');
-        replySelectGrid(replyToken, '支払方法を選択', methods, 'pay', data.k);
+        replySelect(replyToken, '支払方法を選択', methods, 'pay', data.k);
         return;
       }
       case 'pay': {
