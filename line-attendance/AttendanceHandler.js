@@ -223,6 +223,62 @@ const MainProc = (function () {
     return { totalTime, workDays, diffTotal, rows };
   }
 
+  // 過去推移で表示する月数
+  const HISTORY_MONTHS = 12;
+
+  /**
+   * 指定日が属する月の合計・残業（分）を集計します。ファイルが無ければnull。
+   */
+  const computeMonthTotals = (date) => {
+    const ssFile = getFile(date);
+    if (!ssFile) return null;
+    const { workDays, diffTotal } = calculateTotalTime(ssFile, date);
+    return { total: diffTotal, overtime: diffTotal - workDays * 8 * 60 };
+  }
+
+  /**
+   * 過去12ヶ月の月別合計・残業を表示します（過去月はキャッシュ）。
+   */
+  const displayHistory = (replyToken) => {
+    const raw = Props.getValue(PKeys.MONTH_SUMMARY_CACHE);
+    const cache = raw ? JSON.parse(raw) : {};
+    const now = new Date();
+    const rows = [];
+    let cacheUpdated = false;
+
+    for (let i = 0; i < HISTORY_MONTHS; i++) {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const yyyymm = DateUtils.formatDate(monthDate, 'yyyyMM');
+      const isCurrent = i === 0;
+
+      let totals;
+      if (!isCurrent && cache[yyyymm]) {
+        // 確定済みの過去月はキャッシュを使用
+        totals = cache[yyyymm];
+      } else {
+        // 当月は本日まで、過去月は末日まで集計
+        const target = isCurrent ? now : new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+        totals = computeMonthTotals(target);
+        if (totals && !isCurrent) {
+          cache[yyyymm] = totals;
+          cacheUpdated = true;
+        }
+      }
+
+      if (totals) {
+        rows.push({
+          label: DateUtils.formatDate(monthDate, 'yyyy/MM'),
+          total: convertMinutes2Hour(totals.total),
+          overtime: convertMinutes2Hour(totals.overtime),
+          current: isCurrent,
+        });
+      }
+    }
+
+    if (cacheUpdated) Props.setValue(PKeys.MONTH_SUMMARY_CACHE, JSON.stringify(cache));
+    LineManager.replyFlex(replyToken, '過去12ヶ月の推移', FlexCards.history({ title: '過去12ヶ月の推移', rows }));
+  }
+
   /**
    * 期間入力可否を送信します。
    * @param replyToken リプライトークン
@@ -912,6 +968,10 @@ const MainProc = (function () {
         case 'list':
           // 稼働表示
           displayAttendanceReport(replyToken, data.month);
+          break;
+        case 'history':
+          // 過去12ヶ月の月別推移
+          displayHistory(replyToken);
           break;
         case 'help':
           // ヘルプ表示

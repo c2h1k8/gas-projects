@@ -120,6 +120,29 @@ const FlexCards = (() => {
     },
 
     /**
+     * 月別推移カード（過去Nヶ月の合計・残業）。
+     * @param {{title, rows}} p  rows: [{ label, total, overtime, current }]
+     */
+    history: ({ title, rows }) => {
+      const body = [];
+      if (!rows || rows.length === 0) {
+        body.push(text('データがありません', { size: 'sm', color: GRAY, align: 'center' }));
+      } else {
+        rows.forEach((r, i) => {
+          body.push({
+            type: 'box', layout: 'horizontal', alignItems: 'center', margin: i > 0 ? 'md' : 'none',
+            contents: [
+              text(r.label, { size: 'sm', weight: r.current ? 'bold' : 'regular', color: r.current ? BLUE : DARK, flex: 3 }),
+              text(r.total, { size: 'sm', color: DARK, align: 'end', flex: 3 }),
+              text(`残業 ${r.overtime}`, { size: 'xs', color: GRAY, align: 'end', gravity: 'center', flex: 4 }),
+            ],
+          });
+        });
+      }
+      return shell(BLUE, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
+    },
+
+    /**
      * 結果カード（勤怠連絡・勤務表提出など）。
      * @param {{status, title, subtitle}} p  status: 'ok' | 'ng' | 'info'
      */
