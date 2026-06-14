@@ -5,8 +5,11 @@ const MainProcLineRegist = (() => {
   const STATE_TTL = 600;
   // フォールバックFlexグリッドの列数
   const GRID_COLUMNS = 2;
-  // クイックリプライの最大件数（超過時はFlexグリッドにフォールバック）
+  // クイックリプライの最大件数（超過時はカルーセルにフォールバック）
   const QUICK_REPLY_MAX = 13;
+  // カルーセル1カードあたりの件数とカード数上限
+  const CAROUSEL_PAGE = 8;
+  const CAROUSEL_MAX = 12;
 
   const cache = () => CacheService.getUserCache();
   const token = () => Props.getValue(PKeys.LINE_CHANNEL_TOKEN);
@@ -52,9 +55,15 @@ const MainProcLineRegist = (() => {
       return;
     }
 
-    // 14件以上はFlexグリッド
-    const buttons = items.map((v) => ({ label: String(v), data: dataOf(v), displayText: String(v) }));
-    replyFlex(replyToken, title, LineUtil.getFlexButtonGrid(title, buttons, GRID_COLUMNS));
+    // 14件以上はカルーセル（横スワイプ）。1カードあたり CAROUSEL_PAGE 件。
+    const pages = Math.ceil(items.length / CAROUSEL_PAGE);
+    const bubbles = [];
+    for (let i = 0; i < items.length && bubbles.length < CAROUSEL_MAX; i += CAROUSEL_PAGE) {
+      const chunk = items.slice(i, i + CAROUSEL_PAGE).map((v) => ({ label: String(v), data: dataOf(v), displayText: String(v) }));
+      const pageNo = Math.floor(i / CAROUSEL_PAGE) + 1;
+      bubbles.push(LineUtil.getFlexButtonGrid(`${title}  (${pageNo}/${pages})`, chunk, GRID_COLUMNS));
+    }
+    replyFlex(replyToken, title, { type: 'carousel', contents: bubbles });
   };
 
   const row = (key, value) => ({
