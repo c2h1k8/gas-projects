@@ -17,21 +17,16 @@ const MainProcUnregisterdExpenseNotification = (function () {
   }
 
   const pushMessage = (outData) => {
-    const msgList = ['家計簿へ未登録です。'];
-    for (const rowData of outData) {
-      const msgs = [
-        `日付：${rowData[IDX_COL_DATE]}`,
-        `支払方法：${rowData[IDX_COL_METHOD_PAY]}`,
-        `金額：${rowData[IDX_COL_AMOUNT].toLocaleString()}円`,
-        `備考: ${rowData[IDX_COL_NOTE]}`,
-        
-      ];
-      const msg = msgs.join('\n');
-      Logger.log(msg);
-      msgList.push(msg);
-    }
-
-    LineUtil.postText(Props.getValue(PKeys.LINE_CHANNEL_TOKEN), Props.getValue(PKeys.LINE_USER_ID), msgList.join('\n\n'));
+    const rows = outData.map((rowData) => {
+      const method = rowData[IDX_COL_METHOD_PAY];
+      const note = rowData[IDX_COL_NOTE];
+      return {
+        date: rowData[IDX_COL_DATE],
+        amount: rowData[IDX_COL_AMOUNT],
+        sub: note ? `${method}・${note}` : method,
+      };
+    });
+    LocalUtils.postFlex('家計簿 未登録', NotifyCards.unregistered(rows));
   }
 
   return {
