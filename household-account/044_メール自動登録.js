@@ -36,35 +36,14 @@ const MainProcMailAI = (() => {
   });
 
   /**
-   * LINE通知用のメッセージリストを構築します。
-   * @param {Date} date - 利用日付
-   * @param {object} shopData - 店舗情報
-   * @param {number} amount - 金額
-   * @param {string} method - 支払方法
-   * @param {string} url - 関連URL
-   * @param {string} note - 備考
-   * @return {string} メッセージ文字列
+   * 通知カード用の明細項目を構築します。
+   * @return {{label, amount, sub}}
    */
-  const buildMsgList = (date, shopData, amount, method, url, note) => {
-    const lines = [
-      `利用日時：${DateUtils.formatDate(date, "yyyy-MM-dd HH:mm")}`,
-      `利用店舗：${shopData.note || shopData.name}`,
-      `支払方法：${method}`,
-      `決済金額：${amount.toLocaleString()}円`,
-    ];
-    if (url) lines.push(`URL：${url}`);
-    if (note) lines.push(`備考: ${note}`);
-    return lines.join('\n');
-  }
-
-  /**
-   * LINE通知を送信します。
-   * @param {Array<string>} messages - 通知メッセージリスト（先頭は固定文言）
-   */
-  const notifyLine = (messages) => {
-    if (messages.length <= 1 || CONFIG.DEBUG) return;
-    LineUtil.postText(Props.getValue(PKeys.LINE_CHANNEL_TOKEN), Props.getValue(PKeys.LINE_USER_ID), messages.join('\n\n'));
-  }
+  const buildItem = (date, shopData, amount, method, note) => ({
+    label: shopData.note || shopData.name || '(店舗不明)',
+    amount,
+    sub: `${method}・${DateUtils.formatDate(date, 'M/d')}${note ? '・' + note : ''}`,
+  });
 
   const getMailAnalyzePrompt = ({ mailBody, shopList }) => {
     const template = Props.getValue(PKeys.MAIL_AI_ANALYZE_PROMPT);
@@ -110,15 +89,14 @@ const MainProcMailAI = (() => {
       });
 
       const res = CONFIG.DEBUG ? true : NotionApi.createPage(page);
-      const msg = buildMsgList(date, shopData, amount, setting.METHOD_PAY, item.url, item.note);
-      Logger.log(msg);
+      const entry = buildItem(date, shopData, amount, setting.METHOD_PAY, item.note);
 
       if (amount === 0) {
-        msgList.SKIP.push(msg);
+        msgList.SKIP.push(entry);
       } else if (res) {
-        msgList.SUCCESS.push(msg);
+        msgList.SUCCESS.push(entry);
       } else {
-        msgList.FAIL.push(msg);
+        msgList.FAIL.push(entry);
         success = false;
       }
     }
@@ -136,24 +114,25 @@ const MainProcMailAI = (() => {
       const shopList = SpreadsheetApp.getActiveSpreadsheet().getRangeByName('お店').getValues().flat();
       const settings = Props.getJson(PKeys.AUTO_REGIST_SETTING_LIST);
       
-      const msgList = {
-        'SUCCESS': [ '家計簿の登録に成功しました。' ],
-        'FAIL': [ '家計簿の登録に失敗しました。' ],
-        'SKIP': [ '家計簿の登録をスキップしました。' ],
-      };
+      const msgList = { SUCCESS: [], FAIL: [], SKIP: [] };
       for (const setting of settings) {
         const threads = GmailApp.search(setting.SEARCH_WORD);
         for (const thread of threads) {
           for (const message of thread.getMessages()) {
             if (!message.isStarred()) continue;
-            processMessage(message, setting, shopList, msgList);            
+            processMessage(message, setting, shopList, msgList);
           }
         }
       }
 
-      notifyLine(msgList.SUCCESS);
-      notifyLine(msgList.SKIP);
-      notifyLine(msgList.FAIL);
+      const count = msgList.SUCCESS.length + msgList.FAIL.length + msgList.SKIP.length;
+      if (count && !CONFIG.DEBUG) {
+        LocalUtils.postFlex('メールから登録', NotifyCards.mailResult({
+          success: msgList.SUCCESS,
+          skip: msgList.SKIP,
+          fail: msgList.FAIL,
+        }));
+      }
     }
   };
 })();

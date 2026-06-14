@@ -84,7 +84,7 @@ const MainProcFixedCost = (function () {
 
       const now = new Date();
 
-      const msgList = [];
+      const items = [];
       for (const data of datas) {
         // 対象月判定
         if (!isRegistMonth(data[IDX_COL_MONTH])) {
@@ -132,13 +132,12 @@ const MainProcFixedCost = (function () {
         }
         const res = NotionApi.createPage(page);
         if (res) {
-          msgList.push(`- ${title} ${amount.toLocaleString()}円`);
+          items.push({ title, amount });
         }
       }
 
-      if (msgList.length) {
-        msgList.unshift('以下の項目を家計簿に登録しました$')
-        LocalUtils.postText(msgList, [LineUtil.getEmojiJson('5ac21cc5031a6752fb806d5c', '126')]);
+      if (items.length) {
+        LocalUtils.postFlex('固定費を登録', NotifyCards.fixedCost(items));
       }
     },
     error: (e) => {
