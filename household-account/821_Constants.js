@@ -64,6 +64,7 @@ const Constants = (function () {
         PRODUCT: 7,
         LINE_CATEGORY: 8,
         LINE_METHOD_PAY: 9,
+        EXCEPT_WORD: 10,
       },
       RNG_NAME: {
         EXCEPT_WORD: '除外ワード',

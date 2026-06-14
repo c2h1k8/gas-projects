@@ -176,6 +176,10 @@ const MainProcMaster = (() => {
       if (isCheckedCol(sheet, Constants.SHEET_MASTER.COL.LINE_METHOD_PAY)) {
         registManualRange(sheet, Constants.SHEET_MASTER.COL.LINE_METHOD_PAY, Constants.SHEET_MASTER.RNG_NAME.LINE_METHOD_PAY);
       }
+      // 除外ワード(J)もチェックON時に名前付き範囲を反映
+      if (isCheckedCol(sheet, Constants.SHEET_MASTER.COL.EXCEPT_WORD)) {
+        registManualRange(sheet, Constants.SHEET_MASTER.COL.EXCEPT_WORD, Constants.SHEET_MASTER.RNG_NAME.EXCEPT_WORD);
+      }
     },
   };
 })();
