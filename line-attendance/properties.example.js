@@ -27,6 +27,8 @@ function setScriptProps() {
     [PKeys.LINE_CHANNEL_TOKEN]: 'YOUR_LINE_CHANNEL_TOKEN',
     [PKeys.LINE_USER_ID]: 'YOUR_LINE_USER_ID',
     [PKeys.DEBUG_EMAIL]: 'YOUR_DEBUG_EMAIL',
+    [PKeys.RICHMENU_IMG_A_ID]: 'YOUR_RICHMENU_IMG_A_DRIVE_FILE_ID',
+    [PKeys.RICHMENU_IMG_B_ID]: 'YOUR_RICHMENU_IMG_B_DRIVE_FILE_ID',
   });
   Logger.log(Props.getAllValues());
 }
