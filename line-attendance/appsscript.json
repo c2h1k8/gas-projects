@@ -9,13 +9,6 @@
         "serviceId": "drive",
         "version": "v2"
       }
-    ],
-    "libraries": [
-      {
-        "userSymbol": "LineUtil",
-        "libraryId": "1AGlk4JQPDNGOxKfJqyVOwWlH6M6TGm0fDxplKXdo5p8DMsQOzXCf5sYS",
-        "version": "13"
-      }
     ]
   },
   "webapp": {

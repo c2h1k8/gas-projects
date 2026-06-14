@@ -12,6 +12,7 @@ line-attendance/Props.js
 line-attendance/GoogleApi.js
 line-attendance/LockUtil.js
 line-attendance/DateUtils.js
+line-attendance/LineUtil.js
 notion-checked-time/CoreUtils.js
 notion-checked-time/Props.js
 notion-checked-time/NotionApi.js
@@ -25,4 +26,5 @@ household-account/CoreUtils.js
 household-account/DateUtils.js
 household-account/GoogleApi.js
 household-account/SpreadUtils.js
+household-account/LineUtil.js
 .DS_Store
