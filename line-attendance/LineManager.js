@@ -31,6 +31,13 @@ const LineManager = (function () {
     replyCarousel: function(replyToken, altText, columns) {
       LineUtil.replyCarousel(getToken(), replyToken, altText, columns);
     },
+    replyFlex: function(replyToken, altText, contents) {
+      if (replyToken) {
+        LineUtil.replyFlex(getToken(), replyToken, altText, contents);
+      } else {
+        LineUtil.postFlex(getToken(), getUserId(), altText, contents);
+      }
+    },
     getBeginnerMark: function() {
       return LineUtil.getEmojiJson('5ac21a18040ab15980c9b43e', '018');
     },

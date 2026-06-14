@@ -115,24 +115,8 @@ const MainProc = (function () {
    * @param replyToken リプライトークン
    */
   const displayHelp = (replyToken) => {
-    const msg = [];
-    const emojis = [];
-    emojis.push(LineManager.getBeginnerMark());
-    emojis.push(LineManager.getBeginnerMark());
-    msg.push('$ ヘルプ $');
-    msg.push('日付を指定する場合は末尾にthまたは日を付与してください。');
-    msg.push('例）1th 1900 or 1日 1900');
-    msg.push('');
-    msg.push('勤怠区分を指定するには以下のアルファベットを先頭に付与してください。');
-    msg.push('※通常出社の場合は省略')
-    msg.push('【勤怠区分】');
-    Object.keys(TYPE_CD).forEach(key => {
-      msg.push(`- ${key}: ${TYPE[TYPE_CD[key]]}`);
-    });
-    msg.push('');
-    msg.push('勤怠連絡をする場合は、以下の形式でメッセージを送信してください。');
-    msg.push('例）[休|客先休] yyyymmdd yyyymmdd 本文');
-    LineManager.reply(replyToken, msg, emojis);
+    const typeList = Object.keys(TYPE_CD).map((cd) => ({ cd, label: TYPE[TYPE_CD[cd]] }));
+    LineManager.replyFlex(replyToken, 'ヘルプ', FlexCards.help(typeList));
   }
 
   /**
@@ -152,39 +136,44 @@ const MainProc = (function () {
       postErrMsgFileNotFound(replyToken, date);
       return;
     }
-    const { totalTime, workDays, diffTotal, lines} = calculateTotalTime(ssFile, date);
-    const msgs = buildSummaryMessages({ totalTime, workDays, diffTotal, lines, showForecast: diffMonths === '' });;
-    LineManager.reply(replyToken, msgs);
+    const { totalTime, workDays, diffTotal, rows } = calculateTotalTime(ssFile, date);
+    const summary = summaryData(totalTime, workDays, diffTotal, diffMonths === '');
+    const card = FlexCards.list({
+      title: `${DateUtils.formatDate(date, 'yyyy年 M月')} 稼働`,
+      total: summary.total,
+      overtime: summary.overtime,
+      forecast: summary.forecast,
+      rows: rows.filter((r) => r.worked),
+    });
+    LineManager.replyFlex(replyToken, `${DateUtils.formatDate(date, 'yyyy年M月')} 稼働`, card);
   }
 
-  const getMsgTotalTime = (date) => {
+  /**
+   * 指定日の月の集計データ（文字列）を返します。
+   * @return {{ total, overtime, forecast }} forecastはnull可
+   */
+  const getMonthSummaryData = (date) => {
     const ssFile = getFile(date);
     const { totalTime, workDays, diffTotal } = calculateTotalTime(ssFile, date);
-    // 最終営業日取得
+    // 最終営業日ではない場合、見込み時間を出す
     const lastBizDate = DateUtils.getBizDatePrev(new Date(date.getFullYear(), date.getMonth() + 1, 1), false);
-    // 最終営業日ではない場合、見込み時間設定
     const showForecast = date.getDate() < lastBizDate.getDate();
-    return buildSummaryMessages({ totalTime, workDays, diffTotal, showForecast });
+    return summaryData(totalTime, workDays, diffTotal, showForecast);
   }
 
-  const buildSummaryMessages = ({ totalTime, workDays, diffTotal, lines = [], showForecast }) => {
-    const msgs = [...lines];
-    if (lines.length) msgs.push('----------');
-
-    // 総労働時間設定
-    msgs.push(`合計：${convertMinutes2Hour(diffTotal)}`);
-
-    // 見込み時間設定
+  const summaryData = (totalTime, workDays, diffTotal, showForecast) => {
+    let forecast = null;
     if (showForecast) {
       const forecastHour = (totalTime.getDate() + 1) * 24 + totalTime.getHours();
       const forecastMin = DateUtils.formatDate(totalTime, 'mm');
-      msgs.push(`見込み：${forecastHour}:${forecastMin}`);
+      forecast = `${forecastHour}:${forecastMin}`;
     }
-
-    // 総残業時間設定
     const overtime = diffTotal - workDays * 8 * 60;
-    msgs.push(`残業：${convertMinutes2Hour(overtime)}`);
-    return msgs;
+    return {
+      total: convertMinutes2Hour(diffTotal),
+      overtime: convertMinutes2Hour(overtime),
+      forecast,
+    };
   };
 
   const calculateTotalTime = (ssFile, date) => {
@@ -193,11 +182,11 @@ const MainProc = (function () {
 
     let workDays = 0;
     let diffTotal = 0;
-    const lines = [];
+    const rows = [];
 
     for (const row of values) {
       const type = row[COLUMN_META.TYPE.IDX];
-      const dateStr = DateUtils.formatDate(row[COLUMN_META.DAY.IDX], 'yyyy-MM-dd(aaa)');
+      const dateLabel = DateUtils.formatDate(row[COLUMN_META.DAY.IDX], 'M/d(aaa)');
       const start = getTime(row[COLUMN_META.START.IDX]);
       const end = getTime(row[COLUMN_META.END.IDX]);
       const diff = getTime(row[COLUMN_META.DIFF.IDX]);
@@ -215,17 +204,23 @@ const MainProc = (function () {
           continue
       }
 
+      let kosu = '';
       if (diff) {
         const mins = convertHour2Minutes(diff);
         diffTotal += mins;
-        lines.push(`${dateStr} ${type} ${start}-${end} (${convertMinutes2Hour(mins)})`)
-      } else {
-        lines.push(`${dateStr} ${type}`);
+        kosu = convertMinutes2Hour(mins);
       }
+      rows.push({
+        dateLabel,
+        type,
+        time: (start && end) ? `${start}-${end}` : '',
+        kosu,
+        worked: !!diff,
+      });
     }
 
     const totalTime = sheet.getRange(RNG_TTL).getValue();
-    return { totalTime, workDays, diffTotal, lines};
+    return { totalTime, workDays, diffTotal, rows };
   }
 
   /**
@@ -359,7 +354,7 @@ const MainProc = (function () {
           'end': addZeroPadding(splitWords[2]),
         }
     }
-    LineManager.reply(replyToken, '$ 勤怠情報が取得できませんでした。', LineManager.getNgMark());
+    LineManager.replyFlex(replyToken, '取得失敗', FlexCards.result({ status: 'ng', title: '勤怠情報が取得できませんでした', subtitle: '「使い方」で入力例を確認できます' }));
   }
 
   /**
@@ -502,24 +497,17 @@ const MainProc = (function () {
       sheet.getRange(rowNo, COLUMN_META.END.NO).setValue(end);
     }
     const diff = getTime(sheet.getRange(rowNo, COLUMN_META.DIFF.NO).getValue());
-    const msg = [];
-    msg.push(`日付: ${DateUtils.formatDate(date, "yyyy-MM-dd")}`);
-    msg.push(`勤怠区分: ${type}`)
-    switch (type) {
-      case TYPE.WORKING:
-      case TYPE.HOLIDAY_WORKING:
-        msg.push(`出社: ${start}`);
-        if (shouldUpdEnd) {
-          msg.push(`退社: ${end}`);
-          msg.push(`工数: ${convertMinutes2Hour(convertHour2Minutes(diff))}`);
-        }
-        break;
-    }
-    if (shouldUpdEnd) {
-      msg.push('----------');
-      Array.prototype.push.apply(msg, getMsgTotalTime(date));
-    }
-    LineManager.reply(replyToken, msg);
+    const isWorking = (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING);
+    const cardType = type || TYPE.CLEAR;
+    const card = FlexCards.punch({
+      dateLabel: DateUtils.formatDate(date, 'M/d(aaa)'),
+      type: cardType,
+      start: isWorking ? start : '',
+      end: (isWorking && shouldUpdEnd) ? end : '',
+      kosu: (isWorking && shouldUpdEnd) ? convertMinutes2Hour(convertHour2Minutes(diff)) : '',
+      summary: shouldUpdEnd ? getMonthSummaryData(date) : null,
+    });
+    LineManager.replyFlex(replyToken, `${cardType} 登録`, card);
 
     if (shouldAbsenceMail(type, shouldUpdEnd, end)) {
       // 勤怠連絡
@@ -637,25 +625,22 @@ const MainProc = (function () {
       }
 
       const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      let msg;
-      let emoji;
+      const nextLabel = `${DateUtils.formatDate(nextDate, 'yyyy年 M月')} 勤務表`;
+      let result;
       if (Props.hasJsonEntry(PKeys.FILE_MAP, DateUtils.formatDate(nextDate, 'yyyyMM'))) {
         // 作成済み
-        msg = ['$ 既に作成済みです。'];
-        emoji = LineManager.getNgMark()
+        result = { status: 'info', title: '翌月分は作成済みです', subtitle: nextLabel };
       } else if (_testMode) {
         // テストモード: ファイル作成をスキップ
         Logger.log('[TEST] makeWorkSchedule: 翌月ファイルの新規作成をスキップ');
-        msg = ['$ [テスト] 翌月ファイル作成をスキップしました。'];
-        emoji = LineManager.getHappinessMark()
+        result = { status: 'info', title: '[テスト] 翌月ファイル作成をスキップ', subtitle: nextLabel };
       } else {
         // 翌月ファイルを作成
         copyFile(nextDate);
-        msg = ['$ 翌月ファイルを作成しました。'];
-        emoji = LineManager.getHappinessMark()
+        result = { status: 'ok', title: '翌月ファイルを作成しました', subtitle: nextLabel };
       }
 
-      LineManager.reply(replyToken, msg, emoji); 
+      LineManager.replyFlex(replyToken, result.title, FlexCards.result(result));
     } finally {
       LockUtil.releaseLock(makeWorkSchedule.name);
     }
@@ -677,8 +662,9 @@ const MainProc = (function () {
 
       // 提出済みチェック
       const yyyyMM = DateUtils.formatDate(date, 'yyyy年MM月');
+      const sheetLabel = `${DateUtils.formatDate(date, 'yyyy年 M月')} 勤務表`;
       if (yyyyMM === Props.getValue(PKeys.LAST_SUBMIT_TIMESHEET)) {
-        return LineManager.reply(replyToken, `$ ${yyyyMM}分の勤務表は提出済みです。`, LineManager.getNgMark());
+        return LineManager.replyFlex(replyToken, '提出済み', FlexCards.result({ status: 'info', title: '提出済みです', subtitle: sheetLabel }));
       }
 
       // Excelファイル生成
@@ -687,9 +673,9 @@ const MainProc = (function () {
       const isSuccess = sendTimesheetMail(blob, date);
       if (isSuccess) {
         if (!_testMode) Props.setValue(PKeys.LAST_SUBMIT_TIMESHEET, yyyyMM);
-        LineManager.reply(replyToken, `$ ${yyyyMM}分の勤務表を提出しました。`, LineManager.getHappinessMark());
+        LineManager.replyFlex(replyToken, '提出しました', FlexCards.result({ status: 'ok', title: '提出しました', subtitle: sheetLabel }));
       } else {
-        LineManager.reply(replyToken, `$ ${yyyyMM}分の勤務表を提出できませんでした。`, LineManager.getAngryMark());
+        LineManager.replyFlex(replyToken, '提出に失敗', FlexCards.result({ status: 'ng', title: '提出に失敗しました', subtitle: sheetLabel }));
       }
     } finally {
       LockUtil.releaseLock(executeHandIn.name);
@@ -743,7 +729,7 @@ const MainProc = (function () {
     const typeMap = { '休': 'REST', '客先休': 'WORK_REST' };
     const type = typeMap[parts[0]];
     if (!type) {
-      LineManager.reply(replyToken, '$ 連絡種別が不正です。', LineManager.getNgMark());
+      LineManager.replyFlex(replyToken, '連絡種別が不正', FlexCards.result({ status: 'ng', title: '連絡種別が不正です', subtitle: '例) 休 / 客先休' }));
       return;
     }
     const toDateStr = (s) => `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
@@ -762,7 +748,7 @@ const MainProc = (function () {
   const sendAttendanceNotification = (replyToken, data) => {
     const subjectList = [];
     if (!(data.type in ABSENCE_TYPE)) {
-        LineManager.reply(replyToken, '$ パラメータ不正です。', LineManager.getNgMark()); 
+        LineManager.replyFlex(replyToken, 'パラメータ不正', FlexCards.result({ status: 'ng', title: 'パラメータが不正です' }));
         return;
     }
     const absenceType = ABSENCE_TYPE[data.type];
@@ -788,10 +774,12 @@ const MainProc = (function () {
     // メール送信
     const toAddresses = _testMode ? [Props.getValue(PKeys.DEBUG_EMAIL)] : JSON.parse(Props.getValue(PKeys.ADDRESS_TO_FOR_REST));
     const isSuccess = GoogleApi.sendEmail(toAddresses, subjectList.join(''), body + buildSignature_(), getMailConfig_());
+    const period = data.to ? `${data.from}〜${data.to}` : data.from;
+    const subtitle = `${absenceType.LABEL} ・ ${period}`;
     if (isSuccess) {
-      LineManager.reply(replyToken, `$ ${absenceType.LABEL}連絡を送信しました。`, LineManager.getHappinessMark());
+      LineManager.replyFlex(replyToken, `${absenceType.LABEL}連絡`, FlexCards.result({ status: 'ok', title: '送信しました', subtitle }));
     } else {
-      LineManager.reply(replyToken, `$ ${absenceType.LABEL}連絡の送信に失敗しました。`, LineManager.getAngryMark()); 
+      LineManager.replyFlex(replyToken, `${absenceType.LABEL}連絡`, FlexCards.result({ status: 'ng', title: '送信に失敗しました', subtitle }));
     }
   }
 
@@ -838,7 +826,7 @@ const MainProc = (function () {
    * @param date 日付
    */
   const postErrMsgFileNotFound = (replyToken, date) => {
-    LineManager.reply(replyToken, `$ ${DateUtils.formatDate(date, 'yyyy年MM月')}分の勤務表がありません。`, LineManager.getAngryMark()); 
+    LineManager.replyFlex(replyToken, '勤務表なし', FlexCards.result({ status: 'ng', title: '勤務表がありません', subtitle: `${DateUtils.formatDate(date, 'yyyy年 M月')}分` }));
   }
 
   /**
