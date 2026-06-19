@@ -450,6 +450,122 @@ const MainProc = (function () {
     LineManager.replyFlex(replyToken, '過去12ヶ月の推移', FlexCards.history({ title: '過去12ヶ月の推移', rows }));
   }
 
+  // ===== 稼働サマリー通知（週次 / 月中 / 前月確定） =====
+
+  /**
+   * 指定日が属する週の月曜0時を返します。
+   */
+  const startOfWeekMon = (date) => {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dow = d.getDay(); // 0=日 .. 6=土
+    d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+    return d;
+  };
+
+  /**
+   * 当月ファイル内で from〜to（両端含む）の合計工数・残業（分）を集計します。
+   * 残業は稼働ロジックと同じく「合計 - 稼働日数×8h」。ファイルが無ければnull。
+   * @param anchorDate 集計対象の月（通常は当日）
+   * @param fromDate 集計開始日（0時）
+   * @param toDate 集計終了日（23:59:59）
+   */
+  const computeRangeTotals = (anchorDate, fromDate, toDate) => {
+    const ssFile = getFile(anchorDate);
+    if (!ssFile) return null;
+    const sheet = SpreadsheetApp.openById(ssFile.getId()).getSheetByName(Props.getValue(PKeys.SHEET_NAME_MAIN));
+    const values = sheet.getRange(13, COLUMN_META.DAY.NO, anchorDate.getDate(), COLUMN_META.DIFF.NO).getValues();
+    let workDays = 0;
+    let diffTotal = 0;
+    for (const row of values) {
+      const dayDate = row[COLUMN_META.DAY.IDX];
+      if (!(dayDate instanceof Date)) continue;
+      if (dayDate < fromDate || dayDate > toDate) continue;
+      if (row[COLUMN_META.TYPE.IDX] === TYPE.WORKING) workDays++;
+      const diff = getTime(row[COLUMN_META.DIFF.IDX]);
+      if (diff) diffTotal += convertHour2Minutes(diff);
+    }
+    return { total: diffTotal, overtime: diffTotal - workDays * 8 * 60, workDays };
+  };
+
+  /**
+   * 週次サマリーをLINEへプッシュします（毎週金曜想定）。
+   * 今週の稼働・残業に加え、当月累計と着地見込みを通知。
+   */
+  const notifyWeeklySummary = () => {
+    const now = new Date();
+    const from = startOfWeekMon(now);
+    const to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    const week = computeRangeTotals(now, from, to);
+    if (!week) return;
+    const month = getMonthSummaryData(now);
+    const metrics = [
+      { label: '今週稼働', value: convertMinutes2Hour(week.total) },
+      { label: '今週残業', value: convertMinutes2Hour(week.overtime), accent: true },
+      { label: '当月累計', value: month.total },
+    ];
+    const note = month.forecast
+      ? `当月着地見込み ${month.forecast} ／ 残業 ${month.overtime}`
+      : `当月残業 ${month.overtime}`;
+    const subtitle = `${DateUtils.formatDate(from, 'M/d')}〜${DateUtils.formatDate(now, 'M/d')}`;
+    const title = '週次サマリー';
+    if (_testMode) {
+      Logger.log(`[TEST] ${title}: ${subtitle} / ${JSON.stringify(metrics)} / ${note}`);
+      return;
+    }
+    LineManager.replyFlex('', title, FlexCards.summary({ title, subtitle, metrics, note }));
+  };
+
+  /**
+   * 月中サマリー（着地見込み）をLINEへプッシュします（月の中旬想定）。
+   * 当月累計・残業・着地見込みを通知。
+   */
+  const notifyMidMonthSummary = () => {
+    const now = new Date();
+    if (!getFile(now)) return;
+    const month = getMonthSummaryData(now);
+    const metrics = [
+      { label: '当月累計', value: month.total },
+      { label: '残業', value: month.overtime, accent: true },
+    ];
+    if (month.forecast) metrics.push({ label: '着地見込み', value: month.forecast });
+    const title = '月中サマリー';
+    const subtitle = `${DateUtils.formatDate(now, 'yyyy年M月')}（${now.getDate()}日時点）`;
+    if (_testMode) {
+      Logger.log(`[TEST] ${title}: ${subtitle} / ${JSON.stringify(metrics)}`);
+      return;
+    }
+    LineManager.replyFlex('', title, FlexCards.summary({ title, subtitle, metrics }));
+  };
+
+  /**
+   * 前月確定サマリーをLINEへプッシュします（月初想定）。
+   * 確定した前月の総稼働・残業を通知し、月別キャッシュにも確定値を保存。
+   */
+  const notifyPrevMonthSummary = () => {
+    const now = new Date();
+    const prevLast = new Date(now.getFullYear(), now.getMonth(), 0); // 前月末日
+    const totals = computeMonthTotals(prevLast);
+    if (!totals) return;
+    // 確定値を月別キャッシュへ保存（過去推移と整合させる）
+    if (!_testMode) {
+      const raw = Props.getValue(PKeys.MONTH_SUMMARY_CACHE);
+      const cache = raw ? JSON.parse(raw) : {};
+      cache[DateUtils.formatDate(prevLast, 'yyyyMM')] = totals;
+      Props.setValue(PKeys.MONTH_SUMMARY_CACHE, JSON.stringify(cache));
+    }
+    const metrics = [
+      { label: '総稼働', value: convertMinutes2Hour(totals.total) },
+      { label: '残業', value: convertMinutes2Hour(totals.overtime), accent: true },
+    ];
+    const title = '前月確定サマリー';
+    const subtitle = `${DateUtils.formatDate(prevLast, 'yyyy年M月')}分`;
+    if (_testMode) {
+      Logger.log(`[TEST] ${title}: ${subtitle} / ${JSON.stringify(metrics)}`);
+      return;
+    }
+    LineManager.replyFlex('', title, FlexCards.summary({ title, subtitle, metrics }));
+  };
+
   /**
    * 期間入力可否を送信します。
    * @param replyToken リプライトークン
@@ -1325,6 +1441,18 @@ const MainProc = (function () {
      * @param mode 'noon' | 'night'
      */
     checkContactOmissions: (mode) => checkContactOmissions(mode),
+    /**
+     * 週次サマリーを通知します（時間主導トリガーから実行）。
+     */
+    notifyWeeklySummary: () => notifyWeeklySummary(),
+    /**
+     * 月中サマリーを通知します（時間主導トリガーから実行）。
+     */
+    notifyMidMonthSummary: () => notifyMidMonthSummary(),
+    /**
+     * 前月確定サマリーを通知します（時間主導トリガーから実行）。
+     */
+    notifyPrevMonthSummary: () => notifyPrevMonthSummary(),
     debug: () => {
       const date = new Date();
       executeContactWork('', {

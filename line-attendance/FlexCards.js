@@ -143,6 +143,26 @@ const FlexCards = (() => {
     },
 
     /**
+     * 稼働サマリーカード（週次/月中/前月確定）。
+     * @param {{title, subtitle, metrics, note}} p
+     *   metrics: [{ label, value, accent }]（accent=trueでアクセント色）
+     *   subtitle / note は省略可。
+     */
+    summary: ({ title, subtitle, metrics, note }) => {
+      const body = [];
+      if (subtitle) body.push(text(subtitle, { size: 'sm', color: GRAY, align: 'center' }));
+      body.push({
+        type: 'box', layout: 'horizontal', margin: subtitle ? 'md' : 'none',
+        contents: (metrics || []).map((m) => metric(m.label, m.value, m.accent ? BLUE : DARK)),
+      });
+      if (note) {
+        body.push(sep());
+        body.push(text(note, { size: 'xs', color: GRAY, align: 'center', wrap: true }));
+      }
+      return shell(BLUE, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
+    },
+
+    /**
      * 結果カード（勤怠連絡・勤務表提出など）。
      * @param {{status, title, subtitle}} p  status: 'ok' | 'ng' | 'info'
      */

@@ -202,6 +202,27 @@ function test_監視_23時() {
   _teardownTest_();
 }
 
+/** テスト: 週次サマリー通知 */
+function test_サマリー_週次() {
+  _setupTest_();
+  MainProc.notifyWeeklySummary();
+  _teardownTest_();
+}
+
+/** テスト: 月中サマリー通知 */
+function test_サマリー_月中() {
+  _setupTest_();
+  MainProc.notifyMidMonthSummary();
+  _teardownTest_();
+}
+
+/** テスト: 前月確定サマリー通知 */
+function test_サマリー_前月確定() {
+  _setupTest_();
+  MainProc.notifyPrevMonthSummary();
+  _teardownTest_();
+}
+
 /** すべてのメッセージ/ポストバックテストを一括実行 */
 function test_all() {
   MainProc.enableTestMode();
