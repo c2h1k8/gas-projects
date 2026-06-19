@@ -6,6 +6,7 @@
 #   EVENT_NAME         github.event_name（pull_request / workflow_dispatch）
 #   DISPATCH_PROJECTS  workflow_dispatch 時の対象（スペース区切り / all）
 #   BASE_SHA, HEAD_SHA pull_request の差分比較用 SHA
+#   DEPLOY             true の場合、push 後に本番 /exec デプロイも更新（PRマージ時）
 #
 # 対象決定ロジック:
 #   - workflow_dispatch: 指定プロジェクト（all なら全部）
@@ -84,6 +85,21 @@ for project in $targets; do
   else
     echo "    FAILED"
     failed+=("$project")
+    echo
+    continue
+  fi
+
+  # PRマージ時のみ: 本番 /exec デプロイ（@HEAD以外）を上書き更新
+  if [ "${DEPLOY:-false}" = "true" ]; then
+    did=$(cd "$project" && clasp deployments | awk '/^- /{ if ($0 !~ /@HEAD/) print $2 }' | head -1)
+    if [ -z "$did" ]; then
+      echo "    deploy: バージョン付きデプロイなし（trigger型）。pushのみ。"
+    elif (cd "$project" && clasp deploy --deploymentId "$did" -d "merge deploy $(date '+%Y-%m-%d %H:%M')"); then
+      echo "    deploy OK ($did)"
+    else
+      echo "    deploy FAILED"
+      failed+=("$project(deploy)")
+    fi
   fi
   echo
 done

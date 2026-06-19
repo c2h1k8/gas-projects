@@ -2,7 +2,9 @@ name: Deploy to GAS
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # opened/synchronize/reopened: pushのみ（HEADプレビュー）
+    # closed: マージ時のみ push + 本番 /exec デプロイ
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       all:
@@ -34,6 +36,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # PRを「マージせず閉じた」場合は何もしない（それ以外は実行）
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.action != 'closed'
+      || github.event.pull_request.merged == true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -83,3 +90,5 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # PRマージ時のみ本番 /exec デプロイまで実行
+          DEPLOY: ${{ github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true }}
