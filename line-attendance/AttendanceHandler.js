@@ -1218,7 +1218,17 @@ const MainProc = (function () {
       }
     }
 
+    // 勤務表未提出チェック（23時のみ・最終営業日に未提出なら通知）
+    let timesheetUnsubmitted = false;
+    if (mode === 'night') {
+      const lastBizDate = DateUtils.getBizDatePrev(new Date(now.getFullYear(), now.getMonth() + 1, 1), false);
+      const isLastBizDay = now.getDate() === lastBizDate.getDate();
+      const yyyyMM = DateUtils.formatDate(now, 'yyyy年MM月');
+      timesheetUnsubmitted = isLastBizDay && Props.getValue(PKeys.LAST_SUBMIT_TIMESHEET) !== yyyyMM;
+    }
+
     const sections = [];
+    if (timesheetUnsubmitted) sections.push({ label: '勤務表未提出', dates: [`${DateUtils.formatDate(now, 'yyyy年M月')}分（最終営業日）`] });
     if (unregistered.length) sections.push({ label: '勤怠未登録', dates: unregistered });
     if (absence.length) sections.push({ label: '欠勤連絡漏れ', dates: absence });
     if (late.length) sections.push({ label: '遅刻連絡漏れ', dates: late });
