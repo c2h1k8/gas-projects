@@ -158,6 +158,20 @@ const FlexCards = (() => {
     },
 
     /**
+     * 勤怠漏れ通知カード。
+     * @param {{title, sections}} p  sections: [{ label, dates: string[] }]
+     */
+    omission: ({ title, sections }) => {
+      const WARN = '#EB6978';
+      const body = [];
+      (sections || []).forEach((s, i) => {
+        body.push(text(s.label, { weight: 'bold', size: 'sm', color: WARN, margin: i > 0 ? 'lg' : 'none' }));
+        (s.dates || []).forEach((d) => body.push(text(`・ ${d}`, { size: 'sm', color: DARK, margin: 'sm', wrap: true })));
+      });
+      return shell(WARN, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
+    },
+
+    /**
      * ヘルプカード。
      * @param {Array<{cd, label}>} typeList 勤怠区分の一覧
      */

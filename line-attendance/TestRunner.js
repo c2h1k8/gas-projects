@@ -188,6 +188,20 @@ function test_postback_勤怠連絡_step3() {
   _teardownTest_();
 }
 
+/** テスト: 連絡漏れ監視（12時・開始登録のみで判定） */
+function test_監視_12時() {
+  _setupTest_();
+  MainProc.checkContactOmissions('noon');
+  _teardownTest_();
+}
+
+/** テスト: 連絡漏れ監視（23時・開始終了の両方で判定） */
+function test_監視_23時() {
+  _setupTest_();
+  MainProc.checkContactOmissions('night');
+  _teardownTest_();
+}
+
 /** すべてのメッセージ/ポストバックテストを一括実行 */
 function test_all() {
   MainProc.enableTestMode();

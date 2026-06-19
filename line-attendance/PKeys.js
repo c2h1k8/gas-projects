@@ -52,4 +52,9 @@ const PKeys = {
 
   /** 月別合計/残業のキャッシュ（JSON: { yyyyMM: { total, overtime } }） */
   MONTH_SUMMARY_CACHE: 'MONTH_SUMMARY_CACHE',
+
+  /** 勤怠開始/終了のLINE登録履歴（JSON Map: { 'yyyy-MM-dd': { start: bool, end: bool } }） */
+  PUNCH_LOG: 'PUNCH_LOG',
+  /** 勤怠連絡の送信履歴（JSON Map: { 'yyyy-MM-dd': [カテゴリ...] }） */
+  SENT_CONTACTS: 'SENT_CONTACTS',
 };
