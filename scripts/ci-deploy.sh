@@ -44,21 +44,26 @@ determine_targets() {
   fi
 
   # pull_request: 変更ファイルは GitHub API から取得（マージ後も確実・git objectに非依存）
-  local changed
+  local changed direct common_changed from_common cf
   changed=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
 
   # 対象 = 直接変更されたプロジェクト ∪ 変更された共通ファイルを使うプロジェクト
-  # （scripts/ や .github/ などGASに無関係な変更は対象に含めない）
-  {
-    # 直接変更されたプロジェクトディレクトリ
-    echo "$changed" | grep -E '^[^/]+/' | cut -d/ -f1
-    # common/notion-common 変更 → copy-common.sh から使用プロジェクトを逆引き
-    echo "$changed" | grep -E '^(common|notion-common)/' | while read -r cf; do
-      common_users "$(dirname "$cf")" "$(basename "$cf")"
-    done
-  } | sort -u | sed '/^$/d' | while read -r d; do
+  # （scripts/ や .github/ などGASに無関係な変更は ALL_PROJECTS 照合で除外される）
+  # ※ grep はマッチ無しで終了コード1を返すため、|| true で set -e 中断を防ぐ
+  direct=$(printf '%s\n' "$changed" | grep -E '^[^/]+/' | cut -d/ -f1 || true)
+
+  common_changed=$(printf '%s\n' "$changed" | grep -E '^(common|notion-common)/' || true)
+  from_common=""
+  while IFS= read -r cf; do
+    [ -z "$cf" ] && continue
+    from_common="${from_common}"$'\n'"$(common_users "$(dirname "$cf")" "$(basename "$cf")")"
+  done <<< "$common_changed"
+
+  printf '%s\n%s\n' "$direct" "$from_common" | sort -u | sed '/^$/d' | while IFS= read -r d; do
     # scriptId 登録のあるプロジェクトのみ
-    echo "$ALL_PROJECTS" | grep -qx "$d" && echo "$d"
+    if printf '%s\n' "$ALL_PROJECTS" | grep -qx "$d"; then
+      echo "$d"
+    fi
   done
 }
 
