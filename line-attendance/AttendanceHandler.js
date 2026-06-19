@@ -329,14 +329,22 @@ const MainProc = (function () {
       postErrMsgFileNotFound(replyToken, date);
       return;
     }
-    const { totalTime, workDays, diffTotal, rows } = calculateTotalTime(ssFile, date);
+    const { totalTime, workDays, diffTotal, rows, dayCounts } = calculateTotalTime(ssFile, date);
     const summary = summaryData(totalTime, workDays, diffTotal, diffMonths === '');
+    // 日数サマリー（稼働は常時表示／その他は0件は非表示。数字を種別色で表示）
+    const dayItems = [{ label: '稼働', count: workDays, type: TYPE.WORKING }];
+    if (dayCounts.paid) dayItems.push({ label: '有給', count: dayCounts.paid, type: TYPE.HOLIDAY });
+    if (dayCounts.holidayWork) dayItems.push({ label: '休出', count: dayCounts.holidayWork, type: TYPE.HOLIDAY_WORKING });
+    if (dayCounts.absent) dayItems.push({ label: '欠勤', count: dayCounts.absent, type: TYPE.REST });
+    if (dayCounts.daikyu) dayItems.push({ label: '代休', count: dayCounts.daikyu, type: TYPE.DAIKYU });
     const card = FlexCards.list({
       title: `${DateUtils.formatDate(date, 'yyyy年 M月')} 稼働`,
       total: summary.total,
       overtime: summary.overtime,
       forecast: summary.forecast,
-      rows: rows.filter((r) => r.worked),
+      days: dayItems,
+      // 工数のある日＋欠勤/有給/代休（休んだ日も俯瞰できるよう表示）
+      rows: rows.filter((r) => r.worked || [TYPE.REST, TYPE.HOLIDAY, TYPE.DAIKYU].includes(r.type)),
     });
     LineManager.replyFlex(replyToken, `${DateUtils.formatDate(date, 'yyyy年M月')} 稼働`, card);
   }
@@ -382,6 +390,8 @@ const MainProc = (function () {
     let workDays = 0;
     let diffTotal = 0;
     const rows = [];
+    // 区分別の日数（稼働一覧の日数サマリーで使用）
+    const dayCounts = { paid: 0, holidayWork: 0, absent: 0, daikyu: 0 };
 
     for (const row of values) {
       const type = row[COLUMN_META.TYPE.IDX];
@@ -394,10 +404,17 @@ const MainProc = (function () {
         case TYPE.WORKING:
           workDays++;
           break;
-        case TYPE.DAIKYU:
         case TYPE.HOLIDAY:
+          dayCounts.paid++;
+          break;
         case TYPE.HOLIDAY_WORKING:
+          dayCounts.holidayWork++;
+          break;
         case TYPE.REST:
+          dayCounts.absent++;
+          break;
+        case TYPE.DAIKYU:
+          dayCounts.daikyu++;
           break;
         default:
           continue
@@ -419,7 +436,7 @@ const MainProc = (function () {
     }
 
     const totalTime = sheet.getRange(RNG_TTL).getValue();
-    return { totalTime, workDays, diffTotal, rows };
+    return { totalTime, workDays, diffTotal, rows, dayCounts };
   }
 
   // 過去推移で表示する月数

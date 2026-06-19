@@ -12,7 +12,7 @@ const FlexCards = (() => {
   const TYPE_COLOR = {
     '出勤': '#26A65B',
     '休日出勤': '#6366D2',
-    '欠勤': '#969CA8',
+    '欠勤': '#EB6978',
     '有給休暇': '#26B0AA',
     '代休': '#F59E42',
     'クリア': '#EB6978',
@@ -90,17 +90,26 @@ const FlexCards = (() => {
 
     /**
      * 稼働一覧カード。
-     * @param {{title, total, overtime, forecast, rows}} p
+     * @param {{title, total, overtime, forecast, days, rows}} p
+     *   days: 日数サマリー [{ label, count, type }]（type=勤怠区分。数字を種別色で表示）。省略可。
      *   rows: [{ dateLabel, type, time, kosu }]（稼働日のみ）
      */
-    list: ({ title, total, overtime, forecast, rows }) => {
+    list: ({ title, total, overtime, forecast, days, rows }) => {
       const kpi = [metric('合計', total, DARK), metric('残業', overtime, BLUE)];
       if (forecast) kpi.push(metric('見込み', forecast, GRAY));
 
-      const body = [
-        { type: 'box', layout: 'horizontal', contents: kpi },
-        sep(),
-      ];
+      const body = [{ type: 'box', layout: 'horizontal', contents: kpi }];
+      if (days && days.length) {
+        const spans = [];
+        days.forEach((d, i) => {
+          if (i > 0) spans.push({ type: 'span', text: '  ・  ', color: GRAY });
+          spans.push({ type: 'span', text: `${d.label} `, color: GRAY });
+          spans.push({ type: 'span', text: String(d.count), color: colorOf(d.type), weight: 'bold' });
+          spans.push({ type: 'span', text: '日', color: GRAY });
+        });
+        body.push({ type: 'text', size: 'sm', align: 'center', margin: 'md', wrap: true, contents: spans });
+      }
+      body.push(sep());
       if (!rows || rows.length === 0) {
         body.push(text('稼働なし', { size: 'sm', color: GRAY, align: 'center', margin: 'md' }));
       } else {
