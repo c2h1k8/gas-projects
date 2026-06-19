@@ -44,8 +44,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # PR差分の算出に全履歴が必要
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -88,7 +86,7 @@ jobs:
         env:
           SCRIPT_IDS: ${{ secrets.CLASP_SCRIPT_IDS }}
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
           # PRマージ時のみ本番 /exec デプロイまで実行
           DEPLOY: ${{ github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true }}

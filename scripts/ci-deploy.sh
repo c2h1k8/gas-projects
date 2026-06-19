@@ -5,15 +5,32 @@
 #   SCRIPT_IDS         project名 -> scriptId の JSON（例: {"line-attendance":"xxx",...}）
 #   EVENT_NAME         github.event_name（pull_request / workflow_dispatch）
 #   DISPATCH_PROJECTS  workflow_dispatch 時の対象（スペース区切り / all）
-#   BASE_SHA, HEAD_SHA pull_request の差分比較用 SHA
+#   PR_NUMBER          pull_request 番号（変更ファイル取得に使用）
+#   GH_TOKEN           gh API 認証用トークン（GITHUB_TOKEN）
 #   DEPLOY             true の場合、push 後に本番 /exec デプロイも更新（PRマージ時）
 #
 # 対象決定ロジック:
 #   - workflow_dispatch: 指定プロジェクト（all なら全部）
-#   - pull_request: 変更プロジェクトのみ。common/ notion-common/ scripts/ が変われば全部。
+#   - pull_request: 直接変更されたプロジェクト ∪ 変更された共通ファイルを使うプロジェクト。
+#       共通ファイル(common/notion-common)の使用先は copy-common.sh の設定から逆引きする。
+#       scripts/ や .github/ などGASに無関係な変更は対象に含めない。
 set -euo pipefail
 
 ALL_PROJECTS=$(echo "$SCRIPT_IDS" | jq -r 'keys[]')
+
+# common/notion-common の変更ファイルを使用するプロジェクトを
+# scripts/copy-common.sh の設定から逆引きする。
+#   $1: 共通ディレクトリ名（common / notion-common）
+#   $2: ファイル名
+common_users() {
+  local dir="$1" file="$2"
+  awk -v FS='"' -v d="$dir" -v f="$file" '
+    # copy_files "project" "srcdir" "file1" "file2" ...
+    $1 ~ /^copy_files / { if ($4 == d) { for (i = 6; i <= NF; i += 2) if ($i == f) { print $2; break } } }
+    # copy_dir "project" "dir1" "dir2" ...（ディレクトリ全体を使用）
+    $1 ~ /^copy_dir /  { for (i = 4; i <= NF; i += 2) if ($i == d) { print $2; break } }
+  ' scripts/copy-common.sh
+}
 
 determine_targets() {
   if [ "${EVENT_NAME:-}" = "workflow_dispatch" ]; then
@@ -26,17 +43,25 @@ determine_targets() {
     return
   fi
 
-  # pull_request
-  local changed
-  changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-  if echo "$changed" | grep -qE '^(common|notion-common|scripts)/'; then
-    # 共通ファイル変更時は全プロジェクト
-    echo "$ALL_PROJECTS"
-    return
-  fi
-  # 変更されたプロジェクトディレクトリのうち scriptId 登録があるもの
-  echo "$changed" | grep -E '^[^/]+/' | cut -d/ -f1 | sort -u | while read -r d; do
-    if echo "$ALL_PROJECTS" | grep -qx "$d"; then
+  # pull_request: 変更ファイルは GitHub API から取得（マージ後も確実・git objectに非依存）
+  local changed direct common_changed from_common cf
+  changed=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+
+  # 対象 = 直接変更されたプロジェクト ∪ 変更された共通ファイルを使うプロジェクト
+  # （scripts/ や .github/ などGASに無関係な変更は ALL_PROJECTS 照合で除外される）
+  # ※ grep はマッチ無しで終了コード1を返すため、|| true で set -e 中断を防ぐ
+  direct=$(printf '%s\n' "$changed" | grep -E '^[^/]+/' | cut -d/ -f1 || true)
+
+  common_changed=$(printf '%s\n' "$changed" | grep -E '^(common|notion-common)/' || true)
+  from_common=""
+  while IFS= read -r cf; do
+    [ -z "$cf" ] && continue
+    from_common="${from_common}"$'\n'"$(common_users "$(dirname "$cf")" "$(basename "$cf")")"
+  done <<< "$common_changed"
+
+  printf '%s\n%s\n' "$direct" "$from_common" | sort -u | sed '/^$/d' | while IFS= read -r d; do
+    # scriptId 登録のあるプロジェクトのみ
+    if printf '%s\n' "$ALL_PROJECTS" | grep -qx "$d"; then
       echo "$d"
     fi
   done
