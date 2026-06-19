@@ -5,7 +5,8 @@
 #   SCRIPT_IDS         project名 -> scriptId の JSON（例: {"line-attendance":"xxx",...}）
 #   EVENT_NAME         github.event_name（pull_request / workflow_dispatch）
 #   DISPATCH_PROJECTS  workflow_dispatch 時の対象（スペース区切り / all）
-#   BASE_SHA, HEAD_SHA pull_request の差分比較用 SHA
+#   PR_NUMBER          pull_request 番号（変更ファイル取得に使用）
+#   GH_TOKEN           gh API 認証用トークン（GITHUB_TOKEN）
 #   DEPLOY             true の場合、push 後に本番 /exec デプロイも更新（PRマージ時）
 #
 # 対象決定ロジック:
@@ -26,9 +27,9 @@ determine_targets() {
     return
   fi
 
-  # pull_request
+  # pull_request: 変更ファイルは GitHub API から取得（マージ後も確実・git objectに非依存）
   local changed
-  changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+  changed=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
   if echo "$changed" | grep -qE '^(common|notion-common|scripts)/'; then
     # 共通ファイル変更時は全プロジェクト
     echo "$ALL_PROJECTS"
