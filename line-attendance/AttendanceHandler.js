@@ -101,6 +101,28 @@ const MainProc = (function () {
   });
 
   /**
+   * Flexメッセージをプッシュ通知します（テストモード時はログ出力のみ）。
+   * @param title 通知タイトル（altText）
+   * @param contents Flexコンテンツ
+   * @param logDetail テストモード時のログ詳細（任意）
+   */
+  const notifyFlex = (title, contents, logDetail = '') => {
+    if (_testMode) {
+      Logger.log(`[TEST] ${title}${logDetail ? ': ' + logDetail : ''}`);
+      return;
+    }
+    LineManager.replyFlex('', title, contents);
+  };
+
+  /**
+   * メール送信先を解決します（テストモード時はデバッグ用アドレス）。
+   * @param pkey 送信先アドレスのプロパティキー（JSON配列で保持）
+   */
+  const resolveRecipients = (pkey) => _testMode
+    ? [Props.getValue(PKeys.DEBUG_EMAIL)]
+    : JSON.parse(Props.getValue(pkey));
+
+  /**
    * 日時から時刻を取得します。
    * @param date 日時
    * @return 時刻
@@ -404,14 +426,49 @@ const MainProc = (function () {
   const HISTORY_MONTHS = 12;
 
   /**
-   * 指定日が属する月の合計・残業（分）を集計します。ファイルが無ければnull。
+   * 当月ファイル内で from〜to（両端含む）の合計工数・残業（分）を集計します。
+   * 工数の集計対象・残業計算は calculateTotalTime と同一基準。ファイルが無ければnull。
+   * @param anchorDate 集計対象の月（通常は当日。読み取り行数の基準）
+   * @param fromDate 集計開始日（0時）
+   * @param toDate 集計終了日（23:59:59）
+   */
+  const computeRangeTotals = (anchorDate, fromDate, toDate) => {
+    const ssFile = getFile(anchorDate);
+    if (!ssFile) return null;
+    const sheet = getMainSheet(ssFile);
+    const values = sheet.getRange(13, COLUMN_META.DAY.NO, anchorDate.getDate(), COLUMN_META.DIFF.NO).getValues();
+    let workDays = 0;
+    let diffTotal = 0;
+    for (const row of values) {
+      const dayDate = row[COLUMN_META.DAY.IDX];
+      if (!(dayDate instanceof Date)) continue;
+      if (dayDate < fromDate || dayDate > toDate) continue;
+      switch (row[COLUMN_META.TYPE.IDX]) {
+        case TYPE.WORKING:
+          workDays++;
+          break;
+        case TYPE.DAIKYU:
+        case TYPE.HOLIDAY:
+        case TYPE.HOLIDAY_WORKING:
+        case TYPE.REST:
+          break;
+        default:
+          continue;
+      }
+      const diff = getTime(row[COLUMN_META.DIFF.IDX]);
+      if (diff) diffTotal += convertHour2Minutes(diff);
+    }
+    return { total: diffTotal, overtime: diffTotal - workDays * 8 * 60, workDays };
+  };
+
+  /**
+   * 指定日が属する月の合計・残業（分）を集計します（月初〜指定日）。ファイルが無ければnull。
    */
   const computeMonthTotals = (date) => {
-    const ssFile = getFile(date);
-    if (!ssFile) return null;
-    const { workDays, diffTotal } = calculateTotalTime(ssFile, date);
-    return { total: diffTotal, overtime: diffTotal - workDays * 8 * 60 };
-  }
+    const from = new Date(date.getFullYear(), date.getMonth(), 1);
+    const to = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
+    return computeRangeTotals(date, from, to);
+  };
 
   /**
    * 月別合計/残業キャッシュ（{ yyyyMM: { total, overtime } }）を取得します。
@@ -481,31 +538,6 @@ const MainProc = (function () {
   };
 
   /**
-   * 当月ファイル内で from〜to（両端含む）の合計工数・残業（分）を集計します。
-   * 残業は稼働ロジックと同じく「合計 - 稼働日数×8h」。ファイルが無ければnull。
-   * @param anchorDate 集計対象の月（通常は当日）
-   * @param fromDate 集計開始日（0時）
-   * @param toDate 集計終了日（23:59:59）
-   */
-  const computeRangeTotals = (anchorDate, fromDate, toDate) => {
-    const ssFile = getFile(anchorDate);
-    if (!ssFile) return null;
-    const sheet = getMainSheet(ssFile);
-    const values = sheet.getRange(13, COLUMN_META.DAY.NO, anchorDate.getDate(), COLUMN_META.DIFF.NO).getValues();
-    let workDays = 0;
-    let diffTotal = 0;
-    for (const row of values) {
-      const dayDate = row[COLUMN_META.DAY.IDX];
-      if (!(dayDate instanceof Date)) continue;
-      if (dayDate < fromDate || dayDate > toDate) continue;
-      if (row[COLUMN_META.TYPE.IDX] === TYPE.WORKING) workDays++;
-      const diff = getTime(row[COLUMN_META.DIFF.IDX]);
-      if (diff) diffTotal += convertHour2Minutes(diff);
-    }
-    return { total: diffTotal, overtime: diffTotal - workDays * 8 * 60, workDays };
-  };
-
-  /**
    * 週次サマリーをLINEへプッシュします（毎週金曜想定）。
    * 今週の稼働・残業に加え、当月累計と着地見込みを通知。
    */
@@ -526,11 +558,7 @@ const MainProc = (function () {
       : `当月残業 ${month.overtime}`;
     const subtitle = `${DateUtils.formatDate(from, 'M/d')}〜${DateUtils.formatDate(now, 'M/d')}`;
     const title = '週次サマリー';
-    if (_testMode) {
-      Logger.log(`[TEST] ${title}: ${subtitle} / ${JSON.stringify(metrics)} / ${note}`);
-      return;
-    }
-    LineManager.replyFlex('', title, FlexCards.summary({ title, subtitle, metrics, note }));
+    notifyFlex(title, FlexCards.summary({ title, subtitle, metrics, note }), `${subtitle} / ${JSON.stringify(metrics)} / ${note}`);
   };
 
   /**
@@ -548,11 +576,7 @@ const MainProc = (function () {
     if (month.forecast) metrics.push({ label: '着地見込み', value: month.forecast });
     const title = '月中サマリー';
     const subtitle = `${DateUtils.formatDate(now, 'yyyy年M月')}（${now.getDate()}日時点）`;
-    if (_testMode) {
-      Logger.log(`[TEST] ${title}: ${subtitle} / ${JSON.stringify(metrics)}`);
-      return;
-    }
-    LineManager.replyFlex('', title, FlexCards.summary({ title, subtitle, metrics }));
+    notifyFlex(title, FlexCards.summary({ title, subtitle, metrics }), `${subtitle} / ${JSON.stringify(metrics)}`);
   };
 
   /**
@@ -576,11 +600,7 @@ const MainProc = (function () {
     ];
     const title = '前月確定サマリー';
     const subtitle = `${DateUtils.formatDate(prevLast, 'yyyy年M月')}分`;
-    if (_testMode) {
-      Logger.log(`[TEST] ${title}: ${subtitle} / ${JSON.stringify(metrics)}`);
-      return;
-    }
-    LineManager.replyFlex('', title, FlexCards.summary({ title, subtitle, metrics }));
+    notifyFlex(title, FlexCards.summary({ title, subtitle, metrics }), `${subtitle} / ${JSON.stringify(metrics)}`);
   };
 
   /**
@@ -1069,7 +1089,7 @@ const MainProc = (function () {
       `${lastName}`,
     ].join('\n');
 
-    const toAddresses = _testMode ? [Props.getValue(PKeys.DEBUG_EMAIL)] : JSON.parse(Props.getValue(PKeys.ADDRESS_TO));
+    const toAddresses = resolveRecipients(PKeys.ADDRESS_TO);
     return GoogleApi.sendEmail(toAddresses, subject, body + buildSignature_(), getMailConfig_(), blob);
   };
 
@@ -1134,7 +1154,7 @@ const MainProc = (function () {
     subjectList.push(date)
 
     // メール送信
-    const toAddresses = _testMode ? [Props.getValue(PKeys.DEBUG_EMAIL)] : JSON.parse(Props.getValue(PKeys.ADDRESS_TO_FOR_REST));
+    const toAddresses = resolveRecipients(PKeys.ADDRESS_TO_FOR_REST);
     const isSuccess = GoogleApi.sendEmail(toAddresses, subjectList.join(''), body + buildSignature_(), getMailConfig_());
     const period = data.to ? `${data.from}〜${data.to}` : data.from;
     const subtitle = `${absenceType.LABEL} ・ ${period}`;
@@ -1372,11 +1392,7 @@ const MainProc = (function () {
     if (!sections.length) return;
 
     const title = `勤怠漏れ通知（${mode === 'night' ? '23時' : '12時'}）`;
-    if (_testMode) {
-      Logger.log(`[TEST] ${title}: ${JSON.stringify(sections)}`);
-      return;
-    }
-    LineManager.replyFlex('', title, FlexCards.omission({ title, sections }));
+    notifyFlex(title, FlexCards.omission({ title, sections }), JSON.stringify(sections));
   }
 
   return {
@@ -1474,20 +1490,3 @@ const MainProc = (function () {
     disableTestMode: () => { _testMode = false; },
   }
 })();
-
-/**
- * Lineメッセージ受信ハンドラ
- */
-function doPost(e) {
-  // 受信データ取得
-  const eventData = JSON.parse(e.postData.contents).events[0];
-  const replyToken = eventData.replyToken;
-  switch (eventData.type) {
-    case 'postback':
-      MainProc.handlePostback(replyToken, eventData.postback);
-      return;
-    case 'message':
-      MainProc.handleMessage(replyToken, eventData.message);
-      break;
-  }
-}
