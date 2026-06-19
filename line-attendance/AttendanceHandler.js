@@ -347,8 +347,14 @@ const MainProc = (function () {
     };
   };
 
+  /**
+   * 勤務表ファイルのメインシートを取得します。
+   * @param ssFile スプレッドシートファイル
+   */
+  const getMainSheet = (ssFile) => SpreadsheetApp.openById(ssFile.getId()).getSheetByName(Props.getValue(PKeys.SHEET_NAME_MAIN));
+
   const calculateTotalTime = (ssFile, date) => {
-    const sheet = SpreadsheetApp.openById(ssFile.getId()).getSheetByName(Props.getValue(PKeys.SHEET_NAME_MAIN));
+    const sheet = getMainSheet(ssFile);
     const values = sheet.getRange(13, COLUMN_META.DAY.NO, date.getDate(), COLUMN_META.DIFF.NO).getValues();
 
     let workDays = 0;
@@ -408,11 +414,23 @@ const MainProc = (function () {
   }
 
   /**
+   * 月別合計/残業キャッシュ（{ yyyyMM: { total, overtime } }）を取得します。
+   */
+  const getMonthCache = () => {
+    const raw = Props.getValue(PKeys.MONTH_SUMMARY_CACHE);
+    return raw ? JSON.parse(raw) : {};
+  };
+
+  /**
+   * 月別合計/残業キャッシュを保存します。
+   */
+  const setMonthCache = (cache) => Props.setValue(PKeys.MONTH_SUMMARY_CACHE, JSON.stringify(cache));
+
+  /**
    * 過去12ヶ月の月別合計・残業を表示します（過去月はキャッシュ）。
    */
   const displayHistory = (replyToken) => {
-    const raw = Props.getValue(PKeys.MONTH_SUMMARY_CACHE);
-    const cache = raw ? JSON.parse(raw) : {};
+    const cache = getMonthCache();
     const now = new Date();
     const rows = [];
     let cacheUpdated = false;
@@ -446,7 +464,7 @@ const MainProc = (function () {
       }
     }
 
-    if (cacheUpdated) Props.setValue(PKeys.MONTH_SUMMARY_CACHE, JSON.stringify(cache));
+    if (cacheUpdated) setMonthCache(cache);
     LineManager.replyFlex(replyToken, '過去12ヶ月の推移', FlexCards.history({ title: '過去12ヶ月の推移', rows }));
   }
 
@@ -472,7 +490,7 @@ const MainProc = (function () {
   const computeRangeTotals = (anchorDate, fromDate, toDate) => {
     const ssFile = getFile(anchorDate);
     if (!ssFile) return null;
-    const sheet = SpreadsheetApp.openById(ssFile.getId()).getSheetByName(Props.getValue(PKeys.SHEET_NAME_MAIN));
+    const sheet = getMainSheet(ssFile);
     const values = sheet.getRange(13, COLUMN_META.DAY.NO, anchorDate.getDate(), COLUMN_META.DIFF.NO).getValues();
     let workDays = 0;
     let diffTotal = 0;
@@ -548,10 +566,9 @@ const MainProc = (function () {
     if (!totals) return;
     // 確定値を月別キャッシュへ保存（過去推移と整合させる）
     if (!_testMode) {
-      const raw = Props.getValue(PKeys.MONTH_SUMMARY_CACHE);
-      const cache = raw ? JSON.parse(raw) : {};
+      const cache = getMonthCache();
       cache[DateUtils.formatDate(prevLast, 'yyyyMM')] = totals;
-      Props.setValue(PKeys.MONTH_SUMMARY_CACHE, JSON.stringify(cache));
+      setMonthCache(cache);
     }
     const metrics = [
       { label: '総稼働', value: convertMinutes2Hour(totals.total) },
@@ -797,7 +814,7 @@ const MainProc = (function () {
       postErrMsgFileNotFound(replyToken, date);
       return;
     }
-    const sheet = SpreadsheetApp.openById(ssFile.getId()).getSheetByName(Props.getValue(PKeys.SHEET_NAME_MAIN));
+    const sheet = getMainSheet(ssFile);
     switch (type) {
       case TYPE.DAIKYU:
       case TYPE.HOLIDAY:
@@ -1244,7 +1261,7 @@ const MainProc = (function () {
     const ssFile = getFile(now);
     if (!ssFile) return;
 
-    const sheet = SpreadsheetApp.openById(ssFile.getId()).getSheetByName(Props.getValue(PKeys.SHEET_NAME_MAIN));
+    const sheet = getMainSheet(ssFile);
     const values = sheet.getRange(13, COLUMN_META.DAY.NO, now.getDate(), COLUMN_META.DIFF.NO).getValues();
     const punchLog = getPunchLog();
     const sent = getSentContacts();
@@ -1453,14 +1470,6 @@ const MainProc = (function () {
      * 前月確定サマリーを通知します（時間主導トリガーから実行）。
      */
     notifyPrevMonthSummary: () => notifyPrevMonthSummary(),
-    debug: () => {
-      const date = new Date();
-      executeContactWork('', {
-        action: 'absence-mail',
-      }, {
-        date: DateUtils.formatDate(date, 'yyyy-MM-dd'),
-      });
-    },
     enableTestMode: () => { _testMode = true; },
     disableTestMode: () => { _testMode = false; },
   }
@@ -1481,8 +1490,4 @@ function doPost(e) {
       MainProc.handleMessage(replyToken, eventData.message);
       break;
   }
-}
-
-function debug() {
-  MainProc.debug();
 }
