@@ -18,15 +18,22 @@ function checkAttendanceNight() {
 }
 
 /**
- * 監視トリガーを登録します（手動実行）。
- * 既存の同名トリガーを削除してから 12時 / 23時 の日次トリガーを作成する。
+ * 週次サマリートリガー（金曜18時想定）。今週＋当月累計・着地見込みを通知。
  */
-function setupAttendanceTriggers() {
-  const handlers = ['checkAttendanceNoon', 'checkAttendanceNight'];
-  ScriptApp.getProjectTriggers().forEach((t) => {
-    if (handlers.includes(t.getHandlerFunction())) ScriptApp.deleteTrigger(t);
-  });
-  ScriptApp.newTrigger('checkAttendanceNoon').timeBased().atHour(12).everyDays(1).create();
-  ScriptApp.newTrigger('checkAttendanceNight').timeBased().atHour(23).everyDays(1).create();
-  Logger.log('勤怠監視トリガーを登録しました（12時 / 23時）');
+function summaryWeekly() {
+  MainProc.notifyWeeklySummary();
+}
+
+/**
+ * 月中サマリートリガー（毎月15日9時想定）。当月累計・残業・着地見込みを通知。
+ */
+function summaryMidMonth() {
+  MainProc.notifyMidMonthSummary();
+}
+
+/**
+ * 前月確定サマリートリガー（毎月1日9時想定）。確定した前月の総稼働・残業を通知。
+ */
+function summaryPrevMonth() {
+  MainProc.notifyPrevMonthSummary();
 }
