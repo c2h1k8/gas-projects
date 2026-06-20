@@ -146,6 +146,13 @@ function test_postback_一覧() {
   _teardownTest_();
 }
 
+/** テスト: 過去12ヶ月の推移ポストバック（バー／前月比／休暇バッジ／所定比／注意月／年間集計） */
+function test_postback_推移() {
+  _setupTest_();
+  _runPostback_({ action: 'history' });
+  _teardownTest_();
+}
+
 /** テスト: ヘルプポストバック */
 function test_postback_ヘルプ() {
   _setupTest_();
@@ -244,6 +251,7 @@ function test_all() {
     ['PB 退勤',                () => _runPostback_({ action: 'end' })],
     ['PB 欠勤',                () => _runPostback_({ action: 'break' })],
     ['PB 一覧',                () => _runPostback_({ action: 'list', month: '' })],
+    ['PB 推移',                () => _runPostback_({ action: 'history' })],
     ['PB ヘルプ',              () => _runPostback_({ action: 'help' })],
     ['PB 勤怠連絡step1',       () => _runPostback_({ action: 'absence-mail' }, { date: '2026-03-18' })],
     ['PB 勤怠連絡step2期間なし', () => _runPostback_({ action: 'absence-mail', times: 1, type: 'OVER_WORK', from: '2026-03-18' })],

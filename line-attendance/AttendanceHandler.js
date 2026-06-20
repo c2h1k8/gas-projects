@@ -441,6 +441,10 @@ const MainProc = (function () {
 
   // 過去推移で表示する月数
   const HISTORY_MONTHS = 12;
+  // この残業時間（分）を超えた月は推移カードで警告色にする（36協定の目安=45h/月）
+  const OVERTIME_ALERT_MIN = 45 * 60;
+  // 所定労働時間（分/日）。残業計算と同一基準（8時間）。
+  const STD_WORK_MIN = 8 * 60;
 
   /**
    * 当月ファイル内で from〜to（両端含む）の合計工数・残業（分）を集計します。
@@ -456,6 +460,8 @@ const MainProc = (function () {
     const values = sheet.getRange(13, COLUMN_META.DAY.NO, anchorDate.getDate(), COLUMN_META.DIFF.NO).getValues();
     let workDays = 0;
     let diffTotal = 0;
+    // 区分別の日数（推移カードの休暇バッジ・年間集計で使用）
+    const dayCounts = { paid: 0, holidayWork: 0, absent: 0, daikyu: 0 };
     for (const row of values) {
       const dayDate = row[COLUMN_META.DAY.IDX];
       if (!(dayDate instanceof Date)) continue;
@@ -464,10 +470,17 @@ const MainProc = (function () {
         case TYPE.WORKING:
           workDays++;
           break;
-        case TYPE.DAIKYU:
         case TYPE.HOLIDAY:
+          dayCounts.paid++;
+          break;
         case TYPE.HOLIDAY_WORKING:
+          dayCounts.holidayWork++;
+          break;
         case TYPE.REST:
+          dayCounts.absent++;
+          break;
+        case TYPE.DAIKYU:
+          dayCounts.daikyu++;
           break;
         default:
           continue;
@@ -475,7 +488,7 @@ const MainProc = (function () {
       const diff = getTime(row[COLUMN_META.DIFF.IDX]);
       if (diff) diffTotal += convertHour2Minutes(diff);
     }
-    return { total: diffTotal, overtime: diffTotal - workDays * 8 * 60, workDays };
+    return { total: diffTotal, overtime: diffTotal - workDays * 8 * 60, workDays, dayCounts };
   };
 
   /**
@@ -506,9 +519,10 @@ const MainProc = (function () {
   const displayHistory = (replyToken) => {
     const cache = getMonthCache();
     const now = new Date();
-    const rows = [];
     let cacheUpdated = false;
 
+    // 新しい月→古い月の順で各月の確定値を集める（前月比・年間集計のため一旦配列化）
+    const entries = [];
     for (let i = 0; i < HISTORY_MONTHS; i++) {
       const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const yyyymm = DateUtils.formatDate(monthDate, 'yyyyMM');
@@ -527,19 +541,77 @@ const MainProc = (function () {
           cacheUpdated = true;
         }
       }
-
-      if (totals) {
-        rows.push({
-          label: DateUtils.formatDate(monthDate, 'yyyy/MM'),
-          total: convertMinutes2Hour(totals.total),
-          overtime: convertMinutes2Hour(totals.overtime),
-          current: isCurrent,
-        });
-      }
+      if (totals) entries.push({ monthDate, isCurrent, totals });
     }
-
     if (cacheUpdated) setMonthCache(cache);
-    LineManager.replyFlex(replyToken, '過去12ヶ月の推移', FlexCards.history({ title: '過去12ヶ月の推移', rows }));
+
+    // バー幅の基準（最繁忙月＝100%）と年間集計
+    const maxTotal = entries.reduce((m, e) => Math.max(m, e.totals.total), 0);
+    let sumTotal = 0;
+    let sumOvertime = 0;
+    let sumWorkDays = 0;
+    let sumStd = 0; // 所定労働の合計（営業日数×8h）
+    let sumPaid = 0;
+    let sumAbsent = 0;
+
+    const rows = entries.map((e, idx) => {
+      const t = e.totals;
+      const dc = t.dayCounts || {};
+      // 営業日数＝稼働＋有給＋欠勤＋代休（休日出勤は非営業日のため除外）
+      const bizDays = (t.workDays || 0) + (dc.paid || 0) + (dc.absent || 0) + (dc.daikyu || 0);
+      sumTotal += t.total;
+      sumOvertime += t.overtime;
+      sumWorkDays += t.workDays || 0;
+      sumStd += bizDays * STD_WORK_MIN;
+      sumPaid += dc.paid || 0;
+      sumAbsent += dc.absent || 0;
+
+      // 休暇バッジ（区分別日数）
+      const days = [];
+      if (dc.paid) days.push({ type: TYPE.HOLIDAY, count: dc.paid });
+      if (dc.holidayWork) days.push({ type: TYPE.HOLIDAY_WORKING, count: dc.holidayWork });
+      if (dc.absent) days.push({ type: TYPE.REST, count: dc.absent });
+      if (dc.daikyu) days.push({ type: TYPE.DAIKYU, count: dc.daikyu });
+
+      // 前月比（一つ古い月との差）。バッジの有無に関わらず常に表示。
+      let deltaText = null;
+      const prev = entries[idx + 1]; // 一つ古い月
+      if (prev) {
+        const d = t.total - prev.totals.total;
+        if (d === 0) deltaText = '±0';
+        else deltaText = `${d > 0 ? '↑+' : '↓-'}${convertMinutes2Hour(Math.abs(d))}`;
+      }
+
+      return {
+        label: DateUtils.formatDate(e.monthDate, 'yyyy/MM'),
+        total: convertMinutes2Hour(t.total),
+        overtime: convertMinutes2Hour(t.overtime),
+        current: e.isCurrent,
+        barPct: maxTotal > 0 ? Math.max(t.total > 0 ? 4 : 0, Math.round((t.total / maxTotal) * 100)) : 0,
+        days,
+        deltaText,
+        // 残業が目安を超えた月は警告色（健康管理・36協定）
+        alert: t.overtime > OVERTIME_ALERT_MIN,
+      };
+    });
+
+    // 所定比（年間の実稼働−所定。プラス=超過、マイナス=不足）
+    const diffStd = sumTotal - sumStd;
+    const stdSign = diffStd === 0 ? '±' : (diffStd > 0 ? '+' : '-');
+    const footer = entries.length
+      ? {
+          yearTotal: convertMinutes2Hour(sumTotal),
+          monthAvg: convertMinutes2Hour(Math.round(sumTotal / entries.length)),
+          dayAvg: sumWorkDays > 0 ? convertMinutes2Hour(Math.round(sumTotal / sumWorkDays)) : '-',
+          overtimeRate: sumTotal > 0 ? `${Math.round((sumOvertime / sumTotal) * 100)}%` : '-',
+          overtimeTotal: convertMinutes2Hour(sumOvertime),
+          stdDiff: `${stdSign}${convertMinutes2Hour(Math.abs(diffStd))}`,
+          paidTotal: `${sumPaid}日`,
+          absentTotal: `${sumAbsent}日`,
+        }
+      : null;
+
+    LineManager.replyFlex(replyToken, '過去12ヶ月の推移', FlexCards.history({ title: '過去12ヶ月の推移', rows, footer }));
   }
 
   // ===== 稼働サマリー通知（週次 / 月中 / 前月確定） =====

@@ -7,6 +7,7 @@ const FlexCards = (() => {
   const DARK = '#333840';
   const GRAY = '#8A8F9A';
   const LIGHT = '#E4E7EE';
+  const WARN = '#EB6978';
 
   // 勤怠区分 → アクセント色
   const TYPE_COLOR = {
@@ -129,25 +130,81 @@ const FlexCards = (() => {
     },
 
     /**
-     * 月別推移カード（過去Nヶ月の合計・残業）。
-     * @param {{title, rows}} p  rows: [{ label, total, overtime, current }]
+     * 月別推移カード（過去Nヶ月の稼働をバーで可視化＋年間集計）。
+     * @param {{title, rows, footer}} p
+     *   rows: [{ label, total, overtime, current, barPct, days:[{type,count}], deltaText, alert }]
+     *   footer: { yearTotal, monthAvg, dayAvg, overtimeRate, overtimeTotal, stdDiff, paidTotal, absentTotal } 省略可
      */
-    history: ({ title, rows }) => {
+    history: ({ title, rows, footer }) => {
       const body = [];
       if (!rows || rows.length === 0) {
         body.push(text('データがありません', { size: 'sm', color: GRAY, align: 'center' }));
-      } else {
-        rows.forEach((r, i) => {
-          body.push({
-            type: 'box', layout: 'horizontal', alignItems: 'center', margin: i > 0 ? 'md' : 'none',
-            contents: [
-              text(r.label, { size: 'sm', weight: r.current ? 'bold' : 'regular', color: r.current ? BLUE : DARK, flex: 3 }),
-              text(r.total, { size: 'sm', color: DARK, align: 'end', flex: 3 }),
-              text(`残業 ${r.overtime}`, { size: 'xs', color: GRAY, align: 'end', gravity: 'center', flex: 4 }),
-            ],
-          });
-        });
+        return shell(BLUE, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
       }
+
+      // 横バー（総稼働の相対量）。flex:1 で残りの幅をすべて使い、左右テキストは内容幅(flex:0)。
+      // 当月は青、過去月は淡い青。
+      const bar = (pct, current) => ({
+        type: 'box', layout: 'horizontal', height: '8px', flex: 1, margin: 'md',
+        backgroundColor: LIGHT, cornerRadius: '4px',
+        contents: [{
+          type: 'box', layout: 'vertical', width: `${pct}%`,
+          backgroundColor: current ? BLUE : '#B6C6EA', cornerRadius: '4px', contents: [],
+        }],
+      });
+
+      // 左右の列は全行で幅を固定（最大桁数基準）。中央のバー／バッジが残りを埋める＝全行で揃う。
+      const LEFT_W = '96px';   // "残業 168:30 ⚠" が収まる幅
+      const RIGHT_W = '64px';  // "↑+168:30" が収まる幅
+      const leftCell = (node) => ({ type: 'box', layout: 'vertical', width: LEFT_W, flex: 0, contents: [node] });
+      const rightCell = (node) => ({ type: 'box', layout: 'vertical', width: RIGHT_W, flex: 0, contents: [node] });
+
+      rows.forEach((r, i) => {
+        // 休暇バッジ（バーの下・中央。左右が固定幅なのでバー帯の真下に揃う）
+        const badges = (r.days || []).map((d, j) => text(`${d.type.charAt(0)}${d.count}`, {
+          size: 'xs', color: colorOf(d.type), margin: j > 0 ? 'sm' : 'none', flex: 0,
+        }));
+
+        body.push({
+          type: 'box', layout: 'vertical', spacing: 'xs', margin: i > 0 ? 'lg' : 'none',
+          contents: [
+            {
+              // 1行目：月度（固定幅） / バー（可変） / 総稼働（固定幅・右）
+              type: 'box', layout: 'horizontal', alignItems: 'center',
+              contents: [
+                leftCell(text(r.label, { size: 'sm', weight: r.current ? 'bold' : 'regular', color: r.current ? BLUE : DARK })),
+                bar(r.barPct, r.current),
+                rightCell(text(r.total, { size: 'sm', weight: r.current ? 'bold' : 'regular', color: DARK, align: 'end' })),
+              ],
+            },
+            {
+              // 2行目：残業（固定幅） / 休暇バッジ（可変・中央） / 前月比（固定幅・右）
+              type: 'box', layout: 'horizontal', alignItems: 'center',
+              contents: [
+                leftCell(text(`残業 ${r.overtime}${r.alert ? ' ⚠' : ''}`, { size: 'xs', color: r.alert ? WARN : GRAY, weight: r.alert ? 'bold' : 'regular' })),
+                { type: 'box', layout: 'horizontal', flex: 1, margin: 'md', justifyContent: 'center', contents: badges.length ? badges : [text(' ', { size: 'xs' })] },
+                rightCell(text(r.deltaText || ' ', { size: 'xs', color: GRAY, align: 'end' })),
+              ],
+            },
+          ],
+        });
+      });
+
+      if (footer) {
+        body.push(sep('lg'));
+        const cell = (label, value, accent) => ({
+          type: 'box', layout: 'baseline', flex: 1,
+          contents: [
+            text(label, { size: 'xs', color: GRAY, flex: 0 }),
+            text(value, { size: 'sm', weight: 'bold', color: accent ? BLUE : DARK, align: 'end', margin: 'sm' }),
+          ],
+        });
+        body.push({ type: 'box', layout: 'horizontal', spacing: 'lg', contents: [cell('年間', footer.yearTotal, true), cell('月平均', footer.monthAvg)] });
+        body.push({ type: 'box', layout: 'horizontal', spacing: 'lg', contents: [cell('1日平均', footer.dayAvg), cell('残業率', footer.overtimeRate)] });
+        body.push({ type: 'box', layout: 'horizontal', spacing: 'lg', contents: [cell('残業計', footer.overtimeTotal), cell('所定差', footer.stdDiff)] });
+        body.push({ type: 'box', layout: 'horizontal', spacing: 'lg', contents: [cell('有給計', footer.paidTotal), cell('欠勤計', footer.absentTotal)] });
+      }
+
       return shell(BLUE, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
     },
 
@@ -191,7 +248,6 @@ const FlexCards = (() => {
      * @param {{title, sections}} p  sections: [{ label, dates: string[] }]
      */
     omission: ({ title, sections }) => {
-      const WARN = '#EB6978';
       const body = [];
       (sections || []).forEach((s, i) => {
         body.push(text(s.label, { weight: 'bold', size: 'sm', color: WARN, margin: i > 0 ? 'lg' : 'none' }));
