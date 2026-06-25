@@ -257,25 +257,120 @@ const FlexCards = (() => {
     },
 
     /**
+     * 連絡状況カード（✅連絡済 / ⚠️要連絡＋連絡ボタン）。
+     * @param {{title, subtitle, entries, pendingCount}} p
+     *   entries: [{ label, catLabel, sent, pending, date, cat }]
+     */
+    contactStatus: ({ title, subtitle, entries, pendingCount }) => {
+      const GREEN = '#26A65B';
+      const body = [];
+      if (subtitle) body.push(text(subtitle, { size: 'sm', color: GRAY, align: 'center' }));
+      body.push(sep());
+      if (!entries || entries.length === 0) {
+        body.push(text('連絡対象はありません', { size: 'sm', color: GRAY, align: 'center', margin: 'md' }));
+      } else {
+        for (const e of entries) {
+          const ok = e.sent;
+          body.push({
+            type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md', alignItems: 'center',
+            contents: [
+              text(ok ? '✅' : '⚠️', { size: 'sm', flex: 0 }),
+              text(e.label, { size: 'sm', color: DARK, flex: 4 }),
+              text(e.catLabel, { size: 'sm', color: ok ? GRAY : WARN, flex: 3 }),
+              text(ok ? '連絡済' : '要連絡', { size: 'sm', color: ok ? GREEN : WARN, align: 'end', flex: 3 }),
+            ],
+          });
+          if (e.pending) {
+            body.push({
+              type: 'button', style: 'primary', height: 'sm', color: BLUE, margin: 'sm',
+              action: { type: 'postback', label: '連絡する', data: JSON.stringify({ action: 'contact-now', date: e.date, cat: e.cat }) },
+            });
+          }
+        }
+        if (pendingCount >= 2) {
+          body.push(sep());
+          body.push({
+            type: 'button', style: 'secondary', height: 'sm', margin: 'md',
+            action: { type: 'postback', label: `未連絡をまとめて連絡（${pendingCount}件）`, data: JSON.stringify({ action: 'contact-bulk' }) },
+          });
+        }
+      }
+      const headerColor = pendingCount > 0 ? WARN : GREEN;
+      return shell(headerColor, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
+    },
+
+    /**
+     * リンクカード（URIボタン）。勤務表を直接開く等に使用。
+     * @param {{title, subtitle, url, label}} p
+     */
+    link: ({ title, subtitle, url, label }) => {
+      const body = [];
+      if (subtitle) body.push(text(subtitle, { size: 'sm', color: GRAY, wrap: true }));
+      body.push({
+        type: 'button', style: 'primary', height: 'sm', color: BLUE, margin: 'md',
+        action: { type: 'uri', label: label || '開く', uri: url },
+      });
+      return shell(BLUE, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
+    },
+
+    /**
      * ヘルプカード。
      * @param {Array<{cd, label}>} typeList 勤怠区分の一覧
      */
     help: (typeList) => {
-      const section = (head, lines) => {
+      // 見出し＋説明行のセクション（行は { k, v } で左に値・右に説明、または文字列で1行）
+      const section = (head, rows) => {
         const c = [text(head, { weight: 'bold', size: 'sm', color: BLUE })];
-        lines.forEach((l) => c.push(text(l, { size: 'sm', color: DARK, wrap: true, margin: 'sm' })));
-        return { type: 'box', layout: 'vertical', spacing: 'none', margin: 'md', contents: c };
+        rows.forEach((r) => {
+          if (typeof r === 'string') {
+            c.push(text(r, { size: 'sm', color: GRAY, wrap: true, margin: 'sm' }));
+            return;
+          }
+          c.push({
+            type: 'box', layout: 'baseline', margin: 'sm', spacing: 'sm',
+            contents: [
+              text(r.k, { size: 'sm', color: DARK, weight: 'bold', flex: 4, wrap: true }),
+              text(r.v, { size: 'sm', color: GRAY, flex: 6, wrap: true, gravity: 'top' }),
+            ],
+          });
+        });
+        return { type: 'box', layout: 'vertical', spacing: 'none', margin: 'lg', contents: c };
       };
+      const typeLine = typeList.map((t) => `${t.cd}：${t.label}`).join('　');
       const body = [
-        text('使い方', { weight: 'bold', size: 'lg', color: DARK }),
+        text('勤怠Bot 使い方', { weight: 'bold', size: 'lg', color: DARK }),
+        text('下のタブのボタン操作が基本。メッセージ入力でも操作できます。', { size: 'xs', color: GRAY, wrap: true, margin: 'sm' }),
         sep(),
-        section('打刻（テキスト入力）', ['例) 1900 → 退社', '例) 1102 1931 → 出社・退社', '例) 1日 1900 / 1th 1900 → 日付指定']),
-        section('勤怠区分（先頭に付与・出社は省略可）', typeList.map((t) => `${t.cd} : ${t.label}`)),
-        section('勤怠連絡', ['例) 休 yyyymmdd 本文', '例) 客先休 yyyymmdd yyyymmdd 本文']),
-        section('一覧', ['「リスト」… 当月', '「リスト 1」… 先月']),
+        section('メニュー（下のタブ）', [
+          { k: '勤怠登録', v: '出社・退社・欠勤／カレンダー登録' },
+          { k: '連絡・提出', v: '稼働一覧・推移／欠勤連絡／勤務表提出' },
+          { k: '状況確認', v: '連絡状況・勤怠チェック・提出状況／着地見込み・勤務表を開く・翌月作成' },
+        ]),
+        section('打刻（メッセージ入力）', [
+          { k: '1900', v: '退社' },
+          { k: '0900 1930', v: '出社・退社' },
+          { k: '28 2104', v: '28日に退社' },
+          { k: '1日 1900', v: '日付を指定（1th 1900 も可）' },
+        ]),
+        section('勤怠区分（先頭に付ける／出社は不要）', [
+          typeLine,
+          { k: 'h', v: '有給休暇として当日登録' },
+          { k: 'w 1930', v: '休日出勤（退社1930）' },
+        ]),
+        section('勤怠連絡（メール送信）', [
+          { k: '休', v: '本日を欠勤連絡' },
+          { k: '休 20260601', v: '指定日を欠勤連絡' },
+          { k: '休 20260601 20260603 本文', v: '期間＋本文' },
+          { k: '客先休 20260601', v: '客先休業日' },
+        ]),
+        section('稼働一覧', [
+          { k: 'リスト', v: '当月' },
+          { k: 'リスト 1', v: '先月（数字でNヶ月前）' },
+        ]),
       ];
       return {
         type: 'bubble',
+        size: 'mega',
         body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'lg', contents: body },
       };
     },

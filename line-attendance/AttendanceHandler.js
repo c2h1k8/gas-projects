@@ -79,6 +79,23 @@ const MainProc = (function () {
     EARLY_WORK: CONTACT_CATEGORY.EARLY_WORK,
   };
 
+  // カテゴリ → 表示ラベル（連絡状況・漏れ通知で共用）
+  const CONTACT_CATEGORY_LABEL = {
+    [CONTACT_CATEGORY.ABSENCE]: '欠勤',
+    [CONTACT_CATEGORY.HOLIDAY_WORK]: '休出',
+    [CONTACT_CATEGORY.LATE_WORK]: '遅刻',
+    [CONTACT_CATEGORY.EARLY_WORK]: '早退',
+    [CONTACT_CATEGORY.OVER_WORK]: '深夜',
+  };
+  // カテゴリの表示順（連絡状況の並び）
+  const CONTACT_CATEGORY_ORDER = [
+    CONTACT_CATEGORY.ABSENCE,
+    CONTACT_CATEGORY.HOLIDAY_WORK,
+    CONTACT_CATEGORY.LATE_WORK,
+    CONTACT_CATEGORY.EARLY_WORK,
+    CONTACT_CATEGORY.OVER_WORK,
+  ];
+
   // テストモードフラグ（スプレッドシート操作をスキップする）
   let _testMode = false;
 
@@ -1204,12 +1221,44 @@ const MainProc = (function () {
   };
 
   /**
+   * 勤怠連絡メールを送信し、成功時は送信履歴を記録します（返信はしません）。
+   * @param type 勤怠連絡種別（ABSENCE_TYPEのKEY）
+   * @param from FROM日付（'yyyy-MM-dd'）
+   * @param to TO日付（'yyyy-MM-dd' / null）
+   * @param text 本文（任意）
+   * @return {{ isSuccess, label, period }}
+   */
+  const performContact_ = (type, from, to, text) => {
+    const absenceType = ABSENCE_TYPE[type];
+    const category = CONTACT_CATEGORY_BY_TYPE[type];
+    const targetDates = buildDateRange(from, to);
+    // 件名: 種別 + 氏名 + _ + 日付（範囲は ~ 連結）
+    let date = from.replace(/-/g, '');
+    if (to) date += '~' + to.replace(/-/g, '');
+    const subject = [
+      absenceType.SUBJECT,
+      Props.getValue(PKeys.NAME_LAST),
+      Props.getValue(PKeys.NAME_FIRST),
+      '_',
+      date,
+    ].join('');
+    const body = text || '';
+    const toAddresses = resolveRecipients(PKeys.ADDRESS_TO_FOR_REST);
+    const isSuccess = GoogleApi.sendEmail(toAddresses, subject, body + buildSignature_(), getMailConfig_());
+    if (isSuccess && category) {
+      // 送信履歴を記録（連絡漏れ監視・二重連絡防止で使用）
+      recordContacts(targetDates, category);
+    }
+    const period = to ? `${from}〜${to}` : from;
+    return { isSuccess, label: absenceType.LABEL, period };
+  };
+
+  /**
    * 勤怠連絡を行います。
    * @param replyToken リプライトークン
    * @param data 入力データ（type: 勤怠連絡種別, from: FROM日付, to: TO日付, text: 本文）
    */
   const sendAttendanceNotification = (replyToken, data) => {
-    const subjectList = [];
     if (!(data.type in ABSENCE_TYPE)) {
         LineManager.replyFlex(replyToken, 'パラメータ不正', FlexCards.result({ status: 'ng', title: 'パラメータが不正です' }));
         return;
@@ -1223,37 +1272,13 @@ const MainProc = (function () {
       LineManager.replyFlex(replyToken, `${absenceType.LABEL}連絡`, FlexCards.result({ status: 'info', title: '連絡済みです', subtitle: `${absenceType.LABEL} ・ ${period}` }));
       return;
     }
-    // 勤怠連絡種別設定
-    subjectList.push(absenceType.SUBJECT);
-    // 氏名設定
-    subjectList.push(Props.getValue(PKeys.NAME_LAST));
-    subjectList.push(Props.getValue(PKeys.NAME_FIRST));
-    subjectList.push('_')
-    // 開始日取得
-    let date = data.from.replace(/-/g, '');
-    let body = '';
-    if (data.to) {
-      // 終了日がある場合、終了日を設定し、本文を再取得
-      date += '~' + data.to.replace(/-/g, '');
-    }
-    if (data.text) {
-      // 本文設定
-      body = data.text;
-    }
-    subjectList.push(date)
-
-    // メール送信
-    const toAddresses = resolveRecipients(PKeys.ADDRESS_TO_FOR_REST);
-    const isSuccess = GoogleApi.sendEmail(toAddresses, subjectList.join(''), body + buildSignature_(), getMailConfig_());
-    const period = data.to ? `${data.from}〜${data.to}` : data.from;
-    const subtitle = `${absenceType.LABEL} ・ ${period}`;
-    if (isSuccess) {
-      // 送信履歴を記録（連絡漏れ監視・二重連絡防止で使用）
-      if (category) recordContacts(targetDates, category);
-      LineManager.replyFlex(replyToken, `${absenceType.LABEL}連絡`, FlexCards.result({ status: 'ok', title: '送信しました', subtitle }));
-    } else {
-      LineManager.replyFlex(replyToken, `${absenceType.LABEL}連絡`, FlexCards.result({ status: 'ng', title: '送信に失敗しました', subtitle }));
-    }
+    // メール送信＋履歴記録
+    const { isSuccess, label, period } = performContact_(data.type, data.from, data.to, data.text);
+    const subtitle = `${label} ・ ${period}`;
+    const result = isSuccess
+      ? { status: 'ok', title: '送信しました', subtitle }
+      : { status: 'ng', title: '送信に失敗しました', subtitle };
+    LineManager.replyFlex(replyToken, `${label}連絡`, FlexCards.result(result));
   }
 
   /**
@@ -1292,6 +1317,258 @@ const MainProc = (function () {
     // 勤怠連絡
     sendAttendanceNotification(replyToken, data);
   }
+
+  // ===== 連絡状況の照会（連絡したっけ？の確認） =====
+
+  /**
+   * 勤務表の1日の状態から必要な連絡カテゴリを返します（checkContactOmissionsと同一基準）。
+   * @param type 勤怠区分
+   * @param start 出社時刻（'HH:mm' / '-' / ''）
+   * @param end 退社時刻（'HH:mm' / '-' / ''）
+   * @param dayDate 対象日（営業日判定に使用）
+   */
+  const neededCategoriesFromSheet_ = (type, start, end, dayDate) => {
+    if (type === TYPE.REST || type === TYPE.HOLIDAY || type === TYPE.DAIKYU) {
+      return [CONTACT_CATEGORY.ABSENCE];
+    }
+    if (type === TYPE.HOLIDAY_WORKING) {
+      const cats = [CONTACT_CATEGORY.HOLIDAY_WORK];
+      if (isOverWorkEnd(end)) cats.push(CONTACT_CATEGORY.OVER_WORK);
+      return cats;
+    }
+    if (!DateUtils.isBizDate(dayDate)) return [];
+    const cats = [];
+    if (isLateStart(start)) cats.push(CONTACT_CATEGORY.LATE_WORK);
+    if (isEarlyEnd(end)) cats.push(CONTACT_CATEGORY.EARLY_WORK);
+    if (isOverWorkEnd(end)) cats.push(CONTACT_CATEGORY.OVER_WORK);
+    return cats;
+  };
+
+  /**
+   * 当月の連絡状況を (日付×カテゴリ) で収集します。
+   * 勤務表の状態（要連絡）と連絡履歴（連絡済み・未来日含む）を合成。
+   * @return [{ dateStr, label, cat, catLabel, sent, pending }]（日付昇順・カテゴリ表示順）
+   */
+  const collectContactStatus_ = () => {
+    const now = new Date();
+    const curYm = DateUtils.formatDate(now, 'yyyy-MM');
+    const sent = getSentContacts();
+
+    // 勤務表（当日まで）から「要連絡」カテゴリを収集
+    const neededMap = new Map(); // dateStr -> Set(category)
+    const ssFile = getFile(now);
+    if (ssFile) {
+      const sheet = getMainSheet(ssFile);
+      const values = sheet.getRange(13, COLUMN_META.DAY.NO, now.getDate(), COLUMN_META.DIFF.NO).getValues();
+      for (const row of values) {
+        const dayDate = row[COLUMN_META.DAY.IDX];
+        if (!(dayDate instanceof Date) || dayDate.getMonth() !== now.getMonth()) continue;
+        const cats = neededCategoriesFromSheet_(
+          row[COLUMN_META.TYPE.IDX],
+          getTime(row[COLUMN_META.START.IDX]),
+          getTime(row[COLUMN_META.END.IDX]),
+          dayDate,
+        );
+        if (cats.length) neededMap.set(DateUtils.formatDate(dayDate, 'yyyy-MM-dd'), new Set(cats));
+      }
+    }
+
+    // 要連絡日 ∪ 連絡済み日（当月分。連絡履歴は未来日も保持しているため拾える）
+    const dateSet = new Set(neededMap.keys());
+    for (const key of sent.keys()) {
+      if (typeof key === 'string' && key.slice(0, 7) === curYm) dateSet.add(key);
+    }
+
+    const entries = [];
+    for (const dateStr of [...dateSet].sort()) {
+      const needed = neededMap.get(dateStr) || new Set();
+      const sentCats = new Set(sent.get(dateStr) || []);
+      const label = DateUtils.formatDate(Utilities.parseDate(dateStr, 'JST', 'yyyy-MM-dd'), 'M/d(aaa)');
+      for (const cat of CONTACT_CATEGORY_ORDER) {
+        const isSent = sentCats.has(cat);
+        const isNeeded = needed.has(cat);
+        if (!isSent && !isNeeded) continue;
+        entries.push({
+          dateStr,
+          label,
+          cat,
+          catLabel: CONTACT_CATEGORY_LABEL[cat] || cat,
+          sent: isSent,
+          pending: isNeeded && !isSent,
+        });
+      }
+    }
+    return entries;
+  };
+
+  /**
+   * 'yyyy-MM-dd'の昇順配列を連続する区間に分割します。
+   * @return [{ from, to }]（単日は to=null）
+   */
+  const groupConsecutiveDates_ = (sortedDateStrs) => {
+    const groups = [];
+    for (const ds of sortedDateStrs) {
+      const last = groups[groups.length - 1];
+      if (last) {
+        const next = new Date(last.toDate);
+        next.setDate(next.getDate() + 1);
+        if (DateUtils.formatDate(next, 'yyyy-MM-dd') === ds) {
+          last.toDate = Utilities.parseDate(ds, 'JST', 'yyyy-MM-dd');
+          last.to = ds;
+          continue;
+        }
+      }
+      groups.push({ from: ds, to: ds, toDate: Utilities.parseDate(ds, 'JST', 'yyyy-MM-dd') });
+    }
+    return groups.map((g) => ({ from: g.from, to: g.from === g.to ? null : g.to }));
+  };
+
+  /**
+   * 当月の連絡状況カードを表示します（✅連絡済 / ⚠️要連絡＋連絡ボタン）。
+   * @param replyToken リプライトークン
+   */
+  const displayContactStatus = (replyToken) => {
+    const now = new Date();
+    const entries = collectContactStatus_();
+    const pendingCount = entries.filter((e) => e.pending).length;
+    LineManager.replyFlex(replyToken, '連絡状況', FlexCards.contactStatus({
+      title: '連絡状況',
+      subtitle: DateUtils.formatDate(now, 'yyyy年M月'),
+      entries,
+      pendingCount,
+    }));
+  };
+
+  /**
+   * 連絡状況から「連絡する」を実行します（日付プリセット）。
+   * @param replyToken リプライトークン
+   * @param data { date, cat, type? }
+   */
+  const executeContactNow = (replyToken, data) => {
+    if (data.cat === CONTACT_CATEGORY.ABSENCE) {
+      if (!data.type) {
+        // 欠勤系は通常休/客先休を選ばせる
+        const actions = ['REST', 'WORK_REST'].map((key) => LineUtil.makeQuickReply({
+          type: 'postback',
+          label: ABSENCE_TYPE[key].LABEL,
+          text: ABSENCE_TYPE[key].LABEL,
+          data: JSON.stringify({ action: 'contact-now', date: data.date, cat: data.cat, type: key }),
+        }));
+        LineManager.replyQuick(replyToken, '連絡種別を教えて下さい。', actions);
+        return;
+      }
+      sendAttendanceNotification(replyToken, { type: data.type, from: data.date, to: null, text: '' });
+      return;
+    }
+    // 遅刻/早退/深夜/休出はカテゴリ＝ABSENCE_TYPEのKEYなので種別確定済み
+    sendAttendanceNotification(replyToken, { type: data.cat, from: data.date, to: null, text: '' });
+  };
+
+  /**
+   * 未連絡をまとめて連絡します（欠勤系は連続日を期間レンジで一括送信）。
+   * @param replyToken リプライトークン
+   * @param data { type? }（欠勤系がある場合は通常休/客先休のKEY）
+   */
+  const executeContactBulk = (replyToken, data) => {
+    const pendings = collectContactStatus_().filter((e) => e.pending);
+    if (!pendings.length) {
+      LineManager.replyFlex(replyToken, 'まとめて連絡', FlexCards.result({ status: 'info', title: '未連絡はありません' }));
+      return;
+    }
+    const hasAbsence = pendings.some((e) => e.cat === CONTACT_CATEGORY.ABSENCE);
+    if (hasAbsence && !data.type) {
+      // 欠勤系を含む場合は通常休/客先休を一度だけ選ばせる
+      const actions = ['REST', 'WORK_REST'].map((key) => LineUtil.makeQuickReply({
+        type: 'postback',
+        label: ABSENCE_TYPE[key].LABEL,
+        text: ABSENCE_TYPE[key].LABEL,
+        data: JSON.stringify({ action: 'contact-bulk', type: key }),
+      }));
+      LineManager.replyQuick(replyToken, '欠勤の連絡種別を教えて下さい。', actions);
+      return;
+    }
+
+    const results = [];
+    // 欠勤系: 連続日を期間レンジでまとめて送信
+    const absenceDates = pendings.filter((e) => e.cat === CONTACT_CATEGORY.ABSENCE).map((e) => e.dateStr).sort();
+    for (const range of groupConsecutiveDates_(absenceDates)) {
+      results.push(performContact_(data.type, range.from, range.to, ''));
+    }
+    // 遅刻/早退/深夜/休出: 単日イベントなので1日ずつ送信
+    for (const e of pendings) {
+      if (e.cat === CONTACT_CATEGORY.ABSENCE) continue;
+      results.push(performContact_(e.cat, e.dateStr, null, ''));
+    }
+
+    const sentCount = results.filter((r) => r.isSuccess).length;
+    const failedCount = results.length - sentCount;
+    const result = failedCount
+      ? { status: 'ng', title: '一部送信に失敗しました', subtitle: `送信 ${sentCount}件 / 失敗 ${failedCount}件` }
+      : { status: 'ok', title: 'まとめて連絡しました', subtitle: `送信 ${sentCount}件` };
+    LineManager.replyFlex(replyToken, 'まとめて連絡', FlexCards.result(result));
+  };
+
+  // ===== 状況確認（オンデマンド） =====
+
+  /**
+   * 当月勤務表の提出状況を表示します（提出済み/未提出＋最終営業日カウントダウン）。
+   * @param replyToken リプライトークン
+   */
+  const displaySubmitStatus = (replyToken) => {
+    const now = new Date();
+    const yyyyMM = DateUtils.formatDate(now, 'yyyy年MM月');
+    const submitted = Props.getValue(PKeys.LAST_SUBMIT_TIMESHEET) === yyyyMM;
+    const lastBizDate = DateUtils.getBizDatePrev(new Date(now.getFullYear(), now.getMonth() + 1, 1), false);
+    // 本日〜最終営業日の残り営業日数（本日含む）
+    let remaining = 0;
+    for (let d = new Date(now.getFullYear(), now.getMonth(), now.getDate()); d <= lastBizDate; d.setDate(d.getDate() + 1)) {
+      if (DateUtils.isBizDate(d)) remaining++;
+    }
+    const subtitle = `${DateUtils.formatDate(now, 'yyyy年M月')}分\n最終営業日 ${DateUtils.formatDate(lastBizDate, 'M/d(aaa)')}（あと${remaining}営業日）`;
+    const result = submitted
+      ? { status: 'ok', title: '提出済みです', subtitle }
+      : { status: remaining <= 1 ? 'ng' : 'info', title: '未提出です', subtitle };
+    LineManager.replyFlex(replyToken, '提出状況', FlexCards.result(result));
+  };
+
+  /**
+   * 当月の着地見込み（累計・残業・着地見込み）を表示します。
+   * @param replyToken リプライトークン
+   */
+  const displayMonthForecast = (replyToken) => {
+    const now = new Date();
+    if (!getFile(now)) {
+      postErrMsgFileNotFound(replyToken, now);
+      return;
+    }
+    const month = getMonthSummaryData(now);
+    const metrics = [
+      { label: '当月累計', value: month.total },
+      { label: '残業', value: month.overtime, accent: true },
+    ];
+    if (month.forecast) metrics.push({ label: '着地見込み', value: month.forecast });
+    const subtitle = `${DateUtils.formatDate(now, 'yyyy年M月')}（${now.getDate()}日時点）`;
+    LineManager.replyFlex(replyToken, '着地見込み', FlexCards.summary({ title: '着地見込み', subtitle, metrics }));
+  };
+
+  /**
+   * 当月勤務表のスプレッドシートを開くリンクを表示します。
+   * @param replyToken リプライトークン
+   */
+  const displayWorkbookLink = (replyToken) => {
+    const now = new Date();
+    const ssFile = getFile(now);
+    if (!ssFile) {
+      postErrMsgFileNotFound(replyToken, now);
+      return;
+    }
+    LineManager.replyFlex(replyToken, '勤務表を開く', FlexCards.link({
+      title: '勤務表を開く',
+      subtitle: `${DateUtils.formatDate(now, 'yyyy年M月')}分の勤務表`,
+      url: ssFile.getUrl(),
+      label: 'スプレッドシートを開く',
+    }));
+  };
 
   /**
    * ファイル未存在エラーを送信します。
@@ -1362,13 +1639,18 @@ const MainProc = (function () {
   }
 
   /**
-   * 勤怠連絡漏れ・勤怠未登録を監視し、漏れがあればLINEへプッシュ通知します。
+   * 勤怠連絡漏れ・勤怠未登録を監視します。
+   * replyToken指定時はオンデマンド点検として返信（漏れなしも返信）、未指定時はプッシュ通知。
    * @param mode 'noon': 開始登録のみで判定 / 'night': 開始・終了の両方で判定
+   * @param replyToken リプライトークン（オンデマンド点検時のみ）
    */
-  const checkContactOmissions = (mode) => {
+  const checkContactOmissions = (mode, replyToken = '') => {
     const now = new Date();
     const ssFile = getFile(now);
-    if (!ssFile) return;
+    if (!ssFile) {
+      if (replyToken) postErrMsgFileNotFound(replyToken, now);
+      return;
+    }
 
     const sheet = getMainSheet(ssFile);
     const values = sheet.getRange(13, COLUMN_META.DAY.NO, now.getDate(), COLUMN_META.DIFF.NO).getValues();
@@ -1478,8 +1760,19 @@ const MainProc = (function () {
     if (overWork.length) sections.push({ label: '深夜作業連絡漏れ', dates: overWork });
     if (holidayWork.length) sections.push({ label: '休出連絡漏れ', dates: holidayWork });
     if (unreflected.length) sections.push({ label: '連絡済み・勤怠未反映', dates: unreflected });
-    if (!sections.length) return;
 
+    // オンデマンド点検: 漏れなしも返信し、漏れありはその場で返信
+    if (replyToken) {
+      if (!sections.length) {
+        LineManager.replyFlex(replyToken, '勤怠チェック', FlexCards.result({ status: 'ok', title: '抜け漏れはありません', subtitle: `${DateUtils.formatDate(now, 'yyyy年M月')} 時点` }));
+        return;
+      }
+      const title = '勤怠チェック';
+      LineManager.replyFlex(replyToken, title, FlexCards.omission({ title, sections }));
+      return;
+    }
+
+    if (!sections.length) return;
     const title = `勤怠漏れ通知（${mode === 'night' ? '23時' : '12時'}）`;
     notifyFlex(title, FlexCards.omission({ title, sections }), JSON.stringify(sections));
   }
@@ -1504,6 +1797,38 @@ const MainProc = (function () {
         case 'absence-mail':
           // 勤怠連絡
           executeContactWork(replyToken, data, receivePostback.params);
+          break;
+        case 'contact-status':
+          // 連絡状況の照会
+          displayContactStatus(replyToken);
+          break;
+        case 'contact-now':
+          // 連絡状況からそのまま連絡
+          executeContactNow(replyToken, data);
+          break;
+        case 'contact-bulk':
+          // 未連絡をまとめて連絡
+          executeContactBulk(replyToken, data);
+          break;
+        case 'contact-check':
+          // 勤怠チェック（オンデマンド点検）
+          checkContactOmissions('noon', replyToken);
+          break;
+        case 'submit-status':
+          // 提出状況
+          displaySubmitStatus(replyToken);
+          break;
+        case 'forecast':
+          // 当月の着地見込み
+          displayMonthForecast(replyToken);
+          break;
+        case 'workbook':
+          // 勤務表を開く
+          displayWorkbookLink(replyToken);
+          break;
+        case 'make-schedule':
+          // 翌月勤務表の作成
+          makeWorkSchedule(replyToken);
           break;
         case 'list':
           // 稼働表示

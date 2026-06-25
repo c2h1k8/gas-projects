@@ -195,6 +195,69 @@ function test_postback_勤怠連絡_step3() {
   _teardownTest_();
 }
 
+/** テスト: 連絡状況の照会 */
+function test_postback_連絡状況() {
+  _setupTest_();
+  _runPostback_({ action: 'contact-status' });
+  _teardownTest_();
+}
+
+/** テスト: 連絡状況からそのまま連絡（欠勤→種別選択） */
+function test_postback_連絡状況_連絡する欠勤() {
+  _setupTest_();
+  _runPostback_({ action: 'contact-now', date: '2026-03-18', cat: 'ABSENCE' });
+  _teardownTest_();
+}
+
+/** テスト: 連絡状況からそのまま連絡（深夜→即送信） */
+function test_postback_連絡状況_連絡する深夜() {
+  _setupTest_();
+  _runPostback_({ action: 'contact-now', date: '2026-03-18', cat: 'OVER_WORK' });
+  _teardownTest_();
+}
+
+/** テスト: 未連絡をまとめて連絡（欠勤種別選択後） */
+function test_postback_まとめて連絡() {
+  _setupTest_();
+  _runPostback_({ action: 'contact-bulk', type: 'REST' });
+  _teardownTest_();
+}
+
+/** テスト: 勤怠チェック（オンデマンド点検） */
+function test_postback_勤怠チェック() {
+  _setupTest_();
+  _runPostback_({ action: 'contact-check' });
+  _teardownTest_();
+}
+
+/** テスト: 提出状況 */
+function test_postback_提出状況() {
+  _setupTest_();
+  _runPostback_({ action: 'submit-status' });
+  _teardownTest_();
+}
+
+/** テスト: 着地見込み */
+function test_postback_着地見込み() {
+  _setupTest_();
+  _runPostback_({ action: 'forecast' });
+  _teardownTest_();
+}
+
+/** テスト: 勤務表を開く */
+function test_postback_勤務表を開く() {
+  _setupTest_();
+  _runPostback_({ action: 'workbook' });
+  _teardownTest_();
+}
+
+/** テスト: 翌月勤務表の作成 */
+function test_postback_翌月作成() {
+  _setupTest_();
+  _runPostback_({ action: 'make-schedule' });
+  _teardownTest_();
+}
+
 /** テスト: 連絡漏れ監視（12時・開始登録のみで判定） */
 function test_監視_12時() {
   _setupTest_();
@@ -256,6 +319,12 @@ function test_all() {
     ['PB 勤怠連絡step1',       () => _runPostback_({ action: 'absence-mail' }, { date: '2026-03-18' })],
     ['PB 勤怠連絡step2期間なし', () => _runPostback_({ action: 'absence-mail', times: 1, type: 'OVER_WORK', from: '2026-03-18' })],
     ['PB 勤怠連絡step3',       () => _runPostback_({ action: 'absence-mail', times: 2, type: 'REST', from: '2026-03-18' }, { date: '2026-03-19' })],
+    ['PB 連絡状況',            () => _runPostback_({ action: 'contact-status' })],
+    ['PB 連絡状況_連絡する深夜', () => _runPostback_({ action: 'contact-now', date: '2026-03-18', cat: 'OVER_WORK' })],
+    ['PB 勤怠チェック',         () => _runPostback_({ action: 'contact-check' })],
+    ['PB 提出状況',            () => _runPostback_({ action: 'submit-status' })],
+    ['PB 着地見込み',          () => _runPostback_({ action: 'forecast' })],
+    ['PB 勤務表を開く',        () => _runPostback_({ action: 'workbook' })],
   ];
 
   let passed = 0;
