@@ -48,7 +48,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # Node22同梱undiciがGoogle APIへのpushで "Premature close" を起こすため
+          # 新しいundiciを含む24系を使う（ローカルの成功環境に合わせる）。
+          node-version: '24'
 
       - name: Install clasp
         run: npm install -g @google/clasp@3.3.0
@@ -84,9 +86,6 @@ jobs:
       - name: Push to GAS
         run: bash scripts/ci-deploy.sh
         env:
-          # ランナーのIPv6経路でGoogle APIへの接続が途中切断され "Premature close" に
-          # なるため、DNSをIPv4優先にして安定したIPv4経路を使わせる。
-          NODE_OPTIONS: --dns-result-order=ipv4first
           SCRIPT_IDS: ${{ secrets.CLASP_SCRIPT_IDS }}
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
