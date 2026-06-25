@@ -48,9 +48,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          # Node22同梱undiciがGoogle APIへのpushで "Premature close" を起こすため
-          # 新しいundiciを含む24系を使う（ローカルの成功環境に合わせる）。
-          node-version: '24'
+          node-version: '22'
 
       - name: Install clasp
         run: npm install -g @google/clasp@3.3.0
