@@ -84,6 +84,9 @@ jobs:
       - name: Push to GAS
         run: bash scripts/ci-deploy.sh
         env:
+          # IPv4/IPv6自動選択(Happy Eyeballs)がランナー↔Google API間で接続を
+          # 途中切断し "Premature close" を起こすため無効化する。
+          NODE_OPTIONS: --no-network-family-autoselection
           SCRIPT_IDS: ${{ secrets.CLASP_SCRIPT_IDS }}
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
