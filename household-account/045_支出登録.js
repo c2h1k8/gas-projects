@@ -30,18 +30,9 @@ const MainProcRegist = (function () {
         const url = sheet.getRange(i, COL_URL).getValue();
         const note = sheet.getRange(i, COL_NOTE).getValue();
         const expenseRatio = sheet.getRange(i, COL_EXPENSE_RATIO).getValue();
-        // iconと支出分割
-        let icon = null;
-        const startIdx = title.indexOf('(');
-        if (startIdx > 0) {
-          const strLength = title.indexOf(')') - startIdx - 1;
-          icon = title.substr(startIdx + 1, strLength);
-          title = title.substr(0, startIdx);
-        }
-        // 大カテゴリページID取得
-        pageMap.set(i, LocalUtils.getCreateSpending({
-          icon,
-          title,
+        // money API 登録用のフィールド
+        pageMap.set(i, {
+          name: title,
           date,
           category,
           amount,
@@ -50,11 +41,11 @@ const MainProcRegist = (function () {
           url,
           note,
           expenseRatio,
-        }));
+        });
       }
       // 登録
       for (const [key, value] of pageMap) {
-        const res = NotionApi.createPage(value);
+        const res = MoneyApi.registerSpending(value);
         Logger.log(res)
         if (res) continue;
         // 登録失敗したものは削除

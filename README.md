@@ -13,7 +13,7 @@ gas-projects/
 ├── scripts/             # 共通コードのコピースクリプト
 │
 ├── line-attendance/     # LINE Bot による勤怠管理
-├── household-account/   # 家計簿（Notion + LINE + AI）
+├── household-account/   # 家計簿（money API + LINE + AI）
 ├── notion-checked-time/ # Notion チェック日時の自動記録
 ├── gmail-auto-delete/   # Gmail 自動削除
 └── line-messaging-api/  # LINE Messaging API ラッパー（GAS ライブラリ）
@@ -33,15 +33,17 @@ LINE のトークでメッセージを送るだけで、勤務表スプレッド
 
 エントリポイント: `doPost`（LINE Webhook）
 
-### household-account — 家計簿管理（Notion + LINE + AI）
-Notion を家計簿データベースとし、スプレッドシートを操作画面として収支を管理します。メールからの AI 自動登録機能を備えています。
+### household-account — 家計簿管理（money API + LINE + AI）
+自前の money API（家計簿 DB）を収支データベースとし、スプレッドシートを操作画面として管理します。新規の支出／収入は money API へ「未確認（`CONFIRMED=0`）」で登録し、money 側の画面で確認・確定するまで本体集計には反映されません。メールからの AI 自動登録機能を備えています。
 
-- **支出登録 / 更新 / 削除**: スプレッドシートのボタンから Notion へ反映（`OnClickRegist`, `OnClickSearchSpending`, `OnClickUpdateSpending` ほか）
+- **支出登録 / 更新 / 削除**: スプレッドシートのボタンから money API へ反映（`OnClickRegist`, `OnClickSearchSpending`, `OnClickUpdateSpending` ほか）
 - **収入登録 / 更新 / 削除**: 同上（`OnClickSearchIncome`, `OnClickUpdateIncome` ほか）
-- **固定費自動登録**: 営業日・指定日基準で固定費を Notion に自動登録（`CreateFixedCost`）
+- **固定費自動登録**: 営業日・指定日基準で固定費を money API に自動登録（`CreateFixedCost`）
 - **メール AI 自動登録**: 受信メールを Gemini で解析し、個人情報をマスクしたうえで家計簿に自動登録（`CreateHouseholdAccountFromMailAI`）
 - **未登録通知 / タスク通知**: 家計簿の未登録項目や GitHub Projects の期限タスクを LINE へ通知（`UnregisterdExpenseNotification`, `sendLine`）
 - **マスタ更新**: 入力規則用リストの更新（`OnClickUpdateDataValidationList`）
+
+カテゴリ / お店 / 支払方法は「名前」で送信し、money API 側が既存マスタからコードを解決します（無ければ NULL＝確定時に割当）。連携ロジックは `048_家計簿DB連携.js`（`MoneyApi`）に集約。`MONEY_API_URL` / `MONEY_API_TOKEN`（スクリプトプロパティ）が未設定なら送信をスキップし、安全に無効化できます。
 
 依存ライブラリ: `LineUtil`, `Parser`
 

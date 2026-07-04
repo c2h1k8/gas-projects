@@ -49,90 +49,27 @@ const MainProcIncome = (() => {
   // ===== UI helpers =====
   const msg = (text) => Browser.msgBox(text);
 
-  // ===== Domain helpers =====
-  const stripIconSuffix = (title) => {
-    if (!title) return title;
-    const idx = title.indexOf('(');
-    if (idx > -1) {
-      // "(...)" の前まで
-      const m = title.match(/(^.*?)(?=\()/);
-      return m ? m[0] : title;
-    }
-    return title;
+  const fmtYmd = (d) => {
+    if (!d) return undefined;
+    if (Object.prototype.toString.call(d) === '[object Date]')
+      return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    return String(d).slice(0, 10);
   };
 
-  /**
-   * "タイトル(😀)" を { title, icon } に分解
-   */
-  const splitTitleAndIcon = (rawTitle) => {
-    if (!rawTitle) return { title: rawTitle, icon: null };
-
-    const startIdx = rawTitle.indexOf('(');
-    const endIdx = rawTitle.indexOf(')');
-
-    if (startIdx > 0 && endIdx > startIdx) {
-      const icon = rawTitle.substring(startIdx + 1, endIdx);
-      const title = rawTitle.substring(0, startIdx);
-      return { title, icon };
-    }
-    return { title: rawTitle, icon: null };
-  };
-
-  /**
-   * Notionページのタイトルに icon を付与した表示用文字列を作る
-   */
-  const formatTitleWithIcon = (titlePlain, iconObj) => {
-    if (!titlePlain) return '';
-    if (iconObj && iconObj.emoji) return `${titlePlain}(${iconObj.emoji})`;
-    return titlePlain;
-  };
-
-  const buildFilterFromSheet = (sheet) => {
-    let title = sheet.getRange(RNG.TITLE).getValue();
+  // シートの検索条件を money API のクエリ（+タイトル名フィルタ）に変換
+  const buildQueryFromSheet = (sheet) => {
+    const title = sheet.getRange(RNG.TITLE).getValue();
     const unfinished = sheet.getRange(RNG.UNFINISHED).getValue();
-    const periodFrom = sheet.getRange(RNG.FROM).getValue();
-    const periodTo = sheet.getRange(RNG.TO).getValue();
-
-    const filterItems = [];
-
-    if (title) {
-      title = stripIconSuffix(title);
-      filterItems.push(new NotionFilterItem(Constants.PROPERTY_INCOME.TITLE, 'title', 'equals', title));
-    }
-    if (unfinished) {
-      filterItems.push(new NotionFilterItem(Constants.PROPERTY_INCOME.CHECKED, 'checkbox', 'equals', false));
-    }
-    if (periodFrom) {
-      filterItems.push(new NotionFilterItem(Constants.PROPERTY_INCOME.DATE, 'date', 'on_or_after', periodFrom));
-    }
-    if (periodTo) {
-      filterItems.push(new NotionFilterItem(Constants.PROPERTY_INCOME.DATE, 'date', 'on_or_before', periodTo));
-    }
-    return new NotionFilter(filterItems);
+    return {
+      title: title || '',
+      confirmed: unfinished ? 0 : undefined, // 未完了＝未確認(CONFIRMED=0)
+      from: fmtYmd(sheet.getRange(RNG.FROM).getValue()),
+      to: fmtYmd(sheet.getRange(RNG.TO).getValue()),
+    };
   };
 
-  const fetchIncomePages = (sheet) => {
-    const filter = buildFilterFromSheet(sheet);
-    return NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_INCOME), filter);
-  };
-
-  // ===== Output helpers =====
-  const mapPagesToRows = (pages) => {
-    const out = [];
-
-    for (const page of pages) {
-      const props = page.properties;
-
-      const titlePlain = props[Constants.PROPERTY_INCOME.TITLE].title[0].plain_text;
-      const title = formatTitleWithIcon(titlePlain, page.icon);
-      
-      const date = props[Constants.PROPERTY_INCOME.DATE].date.start;
-      const amount = props[Constants.PROPERTY_INCOME.AMOUNT].number;
-      out.push([ page.id, title, date, amount ]);
-    }
-
-    return out;
-  };
+  // ===== Output helpers =====  items: money API の /api/income items
+  const mapItemsToRows = (items) => items.map(it => [it.uuid, it.name, it.date, it.amount]);
 
   const sortRows = (rows) => {
     // outData: [id, title, date, amount]
@@ -153,14 +90,16 @@ const MainProcIncome = (() => {
     const sheet = getSheet();
     
     clearDataRange(sheet);
-    
-    const pages = fetchIncomePages(sheet);
-    if (pages.length === 0) {
+
+    const q = buildQueryFromSheet(sheet);
+    let items = MoneyApi.listIncome({ from: q.from, to: q.to, confirmed: q.confirmed });
+    if (q.title) items = items.filter(it => (it.name || '') === q.title);
+    if (items.length === 0) {
       msg('対象のデータがありません。');
       return false;
     }
 
-    const rows = mapPagesToRows(pages);
+    const rows = mapItemsToRows(items);
     sortRows(rows);
     writeRows(sheet, rows);
 
@@ -180,18 +119,13 @@ const MainProcIncome = (() => {
     
     const date = row[IDX.DATE] ? row[IDX.DATE] : new Date();
     
-    const { title, icon } = splitTitleAndIcon(rawTitle);
-    const payload = LocalUtils.getCreateIncome({
-      icon,
-      title,
-      date,
-      amount,
-    });
-    
+    const title = rawTitle;
+
     if (id) {
-      NotionApi.updatePage(id, payload);
+      MoneyApi.updateIncome(id, { name: title, date, amount });
     } else {
-      NotionApi.createPage(payload);
+      // 新規は money API へ「未確認」で登録
+      MoneyApi.registerIncome({ name: title, date, amount });
     }
   }
 
@@ -233,7 +167,7 @@ const MainProcIncome = (() => {
     
     for (const row of targets) {
       const id = row[IDX.ID];
-      if (id) NotionApi.deletePage(id);
+      if (id) MoneyApi.deleteIncome(id);
     }
 
     return true;

@@ -144,20 +144,16 @@ const MainProcLineRegist = (() => {
    */
   const buildMonthSummary = () => {
     const now = new Date();
+    const tz = Session.getScriptTimeZone();
     const first = new Date(now.getFullYear(), now.getMonth(), 1);
-    const nextFirst = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const filter = new NotionFilter([
-      new NotionFilterItem(Constants.PROPERTY_SPENDING.DATE, 'date', 'on_or_after', first),
-      new NotionFilterItem(Constants.PROPERTY_SPENDING.DATE, 'date', 'before', nextFirst),
-    ]);
-    const pages = NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), filter);
+    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0); // 月末日
+    const fmt = (d) => Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+    const items = MoneyApi.listSpending({ from: fmt(first), to: fmt(last) });
     let total = 0;
     const byCategory = new Map();
-    for (const p of pages) {
-      const props = p.properties;
-      const amount = (props[Constants.PROPERTY_SPENDING.AMOUNT] || {}).number || 0;
-      const catProp = props[Constants.PROPERTY_SPENDING.CATEGORY];
-      const cat = (catProp && catProp.select && catProp.select.name) || '未分類';
+    for (const it of items) {
+      const amount = it.amount || 0;
+      const cat = it.category || '未分類';
       total += amount;
       byCategory.set(cat, (byCategory.get(cat) || 0) + amount);
     }
@@ -255,28 +251,27 @@ const MainProcLineRegist = (() => {
         const state = loadState(data.k);
         if (!state) return replyText(replyToken, '入力の有効期限が切れました。最初からやり直してください。');
         state.method = data.v;
-        const page = LocalUtils.getCreateSpending({
-          title: TITLE,
+        const pageId = MoneyApi.registerSpending({
+          name: TITLE,
           category: state.category,
           date: new Date(),
           amount: state.amount,
           methodPay: state.method,
           note: state.note,
         });
-        const res = NotionApi.createPage(page);
-        if (res && res.id) {
+        if (pageId) {
           cache().remove(data.k);
           // よく使う順の並べ替え用に使用回数を記録
           bumpUsage('cat', state.category);
           bumpUsage('pay', state.method);
-          replyFlex(replyToken, '登録しました', buildConfirmCard(state, res.id));
+          replyFlex(replyToken, '登録しました', buildConfirmCard(state, pageId));
         } else {
           replyText(replyToken, '登録に失敗しました。');
         }
         return;
       }
       case 'cancel': {
-        NotionApi.deletePage(data.p);
+        MoneyApi.deleteSpending(data.p);
         replyText(replyToken, '🗑️ 登録を取り消しました。');
         return;
       }

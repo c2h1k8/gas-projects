@@ -78,8 +78,8 @@ const MainProcMailAI = (() => {
       const shopData = getShopData(item.shop);
       const amount = item.amount ?? 0;
 
-      const page = LocalUtils.getCreateSpending({
-        title: `${setting.TITLE}自動登録`,
+      const res = CONFIG.DEBUG ? true : MoneyApi.registerSpending({
+        name: `${setting.TITLE}自動登録`,
         date,
         amount,
         shop: shopData.name,
@@ -87,8 +87,6 @@ const MainProcMailAI = (() => {
         url: item.url,
         note: item.note || shopData.note,
       });
-
-      const res = CONFIG.DEBUG ? true : NotionApi.createPage(page);
       const entry = buildItem(date, shopData, amount, setting.METHOD_PAY, item.note);
 
       if (amount === 0) {

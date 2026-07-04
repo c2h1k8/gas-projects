@@ -4,18 +4,6 @@ const MainProcUnregisterdExpenseNotification = (function () {
   const IDX_COL_AMOUNT = 2;
   const IDX_COL_NOTE = 3;
 
-  /**
-   * 検索条件を指定して検索します。
-   * @return 検索結果
-   */
-  const executeSelect = () => {
-    const filterItems = [
-      new NotionFilterItem(Constants.PROPERTY_SPENDING.TITLE, 'title', 'ends_with', '自動登録'),
-      new NotionFilterItem(Constants.PROPERTY_SPENDING.CHECKED, 'checkbox', 'equals', false),
-    ];
-    return NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), new NotionFilter(filterItems));
-  }
-
   const pushMessage = (outData) => {
     const rows = outData.map((rowData) => {
       const method = rowData[IDX_COL_METHOD_PAY];
@@ -31,26 +19,18 @@ const MainProcUnregisterdExpenseNotification = (function () {
 
   return {
     execute: () => {
-      const resultArray = executeSelect();
-      if (resultArray.length === 0) {
+      // money API の未確認(CONFIRMED=0)支出を通知対象にする
+      const items = MoneyApi.listUnconfirmed('spending');
+      if (items.length === 0) {
         Logger.log('対象データなし');
         return false;
       }
-      const outData = [];
-
-      for (const result of resultArray) {
-        const props = result.properties;
-        const noteItem = props[Constants.PROPERTY_SPENDING.NOTE].rich_text[0];
-        
-        const rowData = [
-          props[Constants.PROPERTY_SPENDING.DATE].date.start,
-          props[Constants.PROPERTY_SPENDING.METHOD_PAY].select.name,
-          props[Constants.PROPERTY_SPENDING.AMOUNT].number,
-          noteItem ? noteItem.plain_text : '',
-        ];
-        
-        outData.push(rowData);
-      }
+      const outData = items.map((it) => [
+        it.date,
+        it.method_pay || '',
+        it.amount,
+        it.note || '',
+      ]);
       // ソート
       const sortMap = new Map([
         [IDX_COL_DATE, true],

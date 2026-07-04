@@ -4,16 +4,6 @@ const PKeys = {
   /** LineユーザID */
   LINE_USER_ID: 'LINE_USER_ID',
 
-  /**  Notionバージョン */
-  NOTION_VERSION: 'NOTION_VERSION',
-  /**  Notionトークン */
-  NOTION_TOKEN: 'NOTION_TOKEN',
-  
-  /** 収入データソースID */
-  DATA_SOURCE_ID_INCOME: 'DATA_SOURCE_ID_INCOME',
-  /** 支出データソースID */
-  DATA_SOURCE_ID_SPENDING: 'DATA_SOURCE_ID_SPENDING',
-
   /** 自動登録設定 */
   AUTO_REGIST_SETTING_LIST: 'AUTO_REGIST_SETTING_LIST',
   /** カレンダーID */
@@ -28,6 +18,11 @@ const PKeys = {
 
   /** GitHubトークン */
   GITHUB_TOKEN: 'GITHUB_TOKEN',
+
+  /** 家計簿DB(money API) のベースURL 例: https://your-money-api.example.com */
+  MONEY_API_URL: 'MONEY_API_URL',
+  /** 家計簿DB(money API) の Bearer トークン */
+  MONEY_API_TOKEN: 'MONEY_API_TOKEN',
 
   /** 選択肢の使用回数（JSON: { cat: {名前:回数}, pay: {名前:回数} }） */
   SELECT_USAGE: 'SELECT_USAGE',

@@ -27,16 +27,19 @@ const MainProcUpdate = (function () {
     return sheet.getRange(ROW_DATA, COL_CHK, rowCnt, colCnt);
   }
 
+  const fmtYmd = (d) => !d ? undefined
+    : (Object.prototype.toString.call(d) === '[object Date]'
+       ? Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd') : String(d).slice(0, 10));
+
   /**
-   * 検索条件を指定して検索します。
+   * 検索条件で money API から支出を取得します（名前系条件はクライアント側で絞り込み）。
    * @param {Sheet} sheet - 検索条件を持つシート
-   * @return {Array} Notionデータ
-   * https://developers.notion.com/reference/post-database-query-filter
+   * @return {Array<object>} /api/spending items
    */
   const executeSelect = (sheet) => {
     const start = Date.now();
     Logger.log('[executeSelect] start');
-    let title = sheet.getRange(RNG_SEARCH_CONDITION_TITLE).getValue();
+    const title = sheet.getRange(RNG_SEARCH_CONDITION_TITLE).getValue();
     const category = sheet.getRange(RNG_SEARCH_CONDITION_CATEGORY).getValue();
     const unfinished = sheet.getRange(RNG_SEARCH_CONDITION_UNFINISHED).getValue();
     const periodFrom = sheet.getRange(RNG_SEARCH_CONDITION_FROM).getValue();
@@ -44,37 +47,17 @@ const MainProcUpdate = (function () {
     const methodPay = sheet.getRange(RNG_SEARCH_CONDITION_METHOD_PAY).getValue();
     const shop = sheet.getRange(RNG_SEARCH_CONDITION_SHOP).getValue();
 
-    const filterItems = [];
+    let items = MoneyApi.listSpending({
+      from: fmtYmd(periodFrom), to: fmtYmd(periodTo),
+      confirmed: unfinished ? 0 : undefined, // 未完了＝未確認(CONFIRMED=0)
+    });
+    if (title) items = items.filter(it => (it.name || '') === title);
+    if (category) items = items.filter(it => (it.category || '') === category);
+    if (methodPay) items = items.filter(it => (it.method_pay || '') === methodPay);
+    if (shop) items = items.filter(it => (it.shop || '') === shop);
 
-    if (title) {
-      if (title.includes('(')) {
-        title = title.match(/(^.*)(?=\()/)[0];
-      }
-      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.TITLE, 'title', 'equals', title));
-    }
-    if (category) {
-      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.CATEGORY, 'select', 'equals', category));
-    }
-    if (unfinished) {
-      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.CHECKED, 'checkbox', 'equals', false));
-    }
-    if (periodFrom) {
-      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.DATE, 'date', 'on_or_after', periodFrom));
-    }
-    if (periodTo) {
-      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.DATE, 'date', 'on_or_before', periodTo));
-    }
-    if (methodPay) {
-      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.METHOD_PAY, 'select', 'equals', methodPay));
-    }
-    if (shop) {
-      filterItems.push(new NotionFilterItem(Constants.PROPERTY_SPENDING.SHOP, 'select', 'equals', shop));
-    }
-
-    const resultArray = NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING), new NotionFilter(filterItems));
-    
     Logger.log(`[executeSelect] end: ${Date.now() - start}ms`);
-    return resultArray;
+    return items;
   }
 
   return {
@@ -99,25 +82,18 @@ const MainProcUpdate = (function () {
       }
 
       LoadingUI.hint('検索結果を整形しています…');
-      const outData = resultArray.map(result => {
-        const props = result.properties;
-        const icon = result['icon'];
-        let titleText = props[Constants.PROPERTY_SPENDING.TITLE].title[0].plain_text;
-        if (icon) titleText += `(${icon.emoji})`;
-
-        return [
-          result.id,
-          titleText,
-          props[Constants.PROPERTY_SPENDING.CATEGORY].select?.name || '',
-          props[Constants.PROPERTY_SPENDING.DATE].date.start,
-          props[Constants.PROPERTY_SPENDING.AMOUNT].number,
-          props[Constants.PROPERTY_SPENDING.SHOP].select?.name || '',
-          props[Constants.PROPERTY_SPENDING.METHOD_PAY].select?.name || '',
-          props[Constants.PROPERTY_SPENDING.URL].url,
-          props[Constants.PROPERTY_SPENDING.NOTE].rich_text[0]?.plain_text || '',
-          props[Constants.PROPERTY_SPENDING.EXPENSE_RATIO].number,
-        ];
-      });
+      const outData = resultArray.map(it => [
+        it.uuid,
+        it.name,
+        it.category || '',
+        it.date,
+        it.amount,
+        it.shop || '',
+        it.method_pay || '',
+        it.url || '',
+        it.note || '',
+        it.expense_ratio || 0,
+      ]);
 
       LoadingUI.hint('検索結果を並び替えています…');
       // ソート
@@ -175,42 +151,15 @@ const MainProcUpdate = (function () {
           return false;
         }
 
-        let icon = null;
-        const startIdx = title.indexOf('(');
-        if (startIdx > 0) {
-          icon = title.slice(startIdx + 1, title.indexOf(')'));
-          title = title.slice(0, startIdx);
-        }
-
-        LoadingUI.hint(` ${rowIndex} 行目の更新データを作成しています…`);
-        const pageBuildStart = Date.now();
-        const page = LocalUtils.getCreateSpending({
-          icon,
-          title,
-          date,
-          category,
-          amount,
-          shop,
-          methodPay,
-          url,
-          note,
-          expenseRatio,
-          dbUpdate: false,
-        });
-        Logger.log(`[update] row ${rowIndex}: built page in ${Date.now() - pageBuildStart}ms`);
-
+        const payload = { name: title, date, category, amount, shop, methodPay, url, note, expenseRatio };
         if (id) {
-          // 更新
+          // 既存レコードの更新（カテゴリ等は名前でOK＝サーバ解決）
           LoadingUI.hint(` ${rowIndex} 行目を更新しています…`);
-          const updateStart = Date.now();
-          NotionApi.updatePage(id, page, true);
-          Logger.log(`[update] row ${rowIndex}: updated page in ${Date.now() - updateStart}ms`);
+          MoneyApi.updateSpending(id, payload);
         } else {
-          // 登録
+          // 新規は money API へ「未確認」で登録
           LoadingUI.hint(` ${rowIndex} 行目を新規登録しています…`);
-          const createStart = Date.now();
-          NotionApi.createPage(page);
-          Logger.log(`[update] row ${rowIndex}: created new page in ${Date.now() - createStart}ms`);
+          MoneyApi.registerSpending(payload);
         }
         Logger.log(`[update] row updated in ${Date.now() - rowStart}ms`);
       }
@@ -233,7 +182,7 @@ const MainProcUpdate = (function () {
       for (const row of values) {
         const [ isUpd, id ] = row;
         if (!isUpd) continue;
-        NotionApi.deletePage(id);
+        if (id) MoneyApi.deleteSpending(id);
       }
       Logger.log(`[delete] end: ${Date.now() - start}ms`);
       return true;
