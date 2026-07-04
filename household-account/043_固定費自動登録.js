@@ -8,14 +8,13 @@ const MainProcFixedCost = (function () {
   const IDX_COL_DAY = 2;
   const IDX_COL_BIZ_PREV = 3;
   const IDX_COL_BIZ_NEXT = 4;
-  const IDX_COL_ICON = 5;
-  const IDX_COL_TITLE = 6;
-  const IDX_COL_CATEGORY = 7;
-  const IDX_COL_AMOUNT = 8;
-  const IDX_COL_SHOP = 9;
-  const IDX_COL_METHOD_PAY = 10;
-  const IDX_COL_NOTE = 11;
-  const IDX_COL_EXPENSE_RATIO = 12;
+  const IDX_COL_TITLE = 5;
+  const IDX_COL_CATEGORY = 6;
+  const IDX_COL_AMOUNT = 7;
+  const IDX_COL_SHOP = 8;
+  const IDX_COL_METHOD_PAY = 9;
+  const IDX_COL_NOTE = 10;
+  const IDX_COL_EXPENSE_RATIO = 11;
 
   const getData = () => {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
@@ -96,7 +95,6 @@ const MainProcFixedCost = (function () {
           Logger.log(`日対象外: ${data[IDX_COL_TITLE]}`);
           continue;
         }
-        const icon = data[IDX_COL_ICON];
         const title = data[IDX_COL_TITLE];
         const category = data[IDX_COL_CATEGORY];
         const amount = data[IDX_COL_AMOUNT];
@@ -104,33 +102,19 @@ const MainProcFixedCost = (function () {
         const methodPay = data[IDX_COL_METHOD_PAY];
         const note = data[IDX_COL_NOTE];
         const expenseRatio = data[IDX_COL_EXPENSE_RATIO];
-        let page;
+        let res;
         switch (data[IDX_COL_TYPE]) {
           case '収入':
-            page = LocalUtils.getCreateIncome({
-              'icon': icon,
-              'title': title,
-              'date': now,
-              'amount': amount,
-            });
+            res = MoneyApi.registerIncome({ name: title, date: now, amount });
             break;
           case '支出':
-            page = LocalUtils.getCreateSpending({
-              icon,
-              title,
-              'date': now,
-              category,
-              amount,
-              shop,
-              methodPay,
-              note,
-              expenseRatio,
+            res = MoneyApi.registerSpending({
+              name: title, date: now, category, amount, shop, methodPay, note, expenseRatio,
             });
             break;
           default:
             continue;
         }
-        const res = NotionApi.createPage(page);
         if (res) {
           items.push({ title, amount });
         }

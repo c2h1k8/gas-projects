@@ -34,109 +34,27 @@ const MainProcMaster = (() => {
   }
 
   /**
-   * 支出データベースから情報を取得します。
-   * @return 支出情報配列
-   */
-  const getSpendingData = () => {
-    const exceptWordTitleSet = new Set(getExceptWordTitleList());
-    const resultSet = new Set();
-    const resultArray =  NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING));
-    for (const result of resultArray) {
-      const title = result.properties[Constants.PROPERTY_SPENDING.TITLE].title[0].plain_text;
-      if (!exceptWordTitleSet.has(title)) {
-        const icon = result['icon'];
-        const content = icon ? `${title}(${icon.emoji})` : title;
-        resultSet.add(content);
-      }
-    }
-    return Array.from(resultSet).sort();
-  }
-
-  /**
-   * 収入データベースから情報を取得します。
-   * @return 収入情報配列
-   */
-  const getIncomeData = () => {
-    const resultSet = new Set();
-    const resultArray =  NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_INCOME));
-    for (const result of resultArray) {
-      const title = result.properties[Constants.PROPERTY_INCOME.TITLE].title[0].plain_text;
-      const icon = result['icon'];
-      const content = icon ? `${title}(${icon.emoji})` : title;
-      resultSet.add(content);
-    }
-    return Array.from(resultSet).sort();
-  }
-
-  /**
-   * 指定プロパティのselectオプション一覧を取得します。
-   * @param {string} propertyKey プロパティキー
-   * @return {string[]} ソート済み配列
-   */
-  const getSelectOptions = (propertyKey) => {
-    const resultList = [];
-
-    const columnMap = NotionApi.getDbColumns(
-      Props.getValue(PKeys.DATA_SOURCE_ID_SPENDING),
-      [propertyKey]
-    );
-
-    const property = columnMap.get(propertyKey);
-
-    if (!property || !property.select || !property.select.options) {
-      return [];
-    }
-
-    for (const option of property.select.options) {
-      resultList.push(option.name);
-    }
-
-    return resultList.sort();
-  };
-  
-  /**
-   * 年間在庫データベースから商品情報を取得します。
-   * @return 商品情報配列
-   */
-  const getProductData = () => {
-    const resultSet = new Set();
-    const resultArray =  NotionApi.getPages(Props.getValue(PKeys.DATA_SOURCE_ID_ANNUAL_STOCK));
-    for (const result of resultArray) {
-      const title = result.properties[Constants.PROPERTY_ANNUAL_STOCK.TITLE].title[0].plain_text;
-      resultSet.add(title);
-    }
-    return Array.from(resultSet).sort();
-  }
-
-  /**
-   * 各データベースから情報を取得します。
+   * 各データベースから情報を取得します（money API のマスタから）。
    * @return データJSON
    */
   const getData = () => {
     const colList = getTargetColList();
     if (!colList.length) return undefined;
+    const m = MoneyApi.getMasters();
+    // 支出項目名は除外ワードを差し引く
+    const exceptSet = new Set(getExceptWordTitleList());
+    const spendingNames = (m.spendingNames ?? []).filter(n => !exceptSet.has(n));
+    const C = Constants.SHEET_MASTER.COL;
+    const byCol = {
+      [C.TITLE_SPENDING]: spendingNames,
+      [C.TITLE_INCOME]: m.incomeNames ?? [],
+      [C.CATEGORY]: m.categories ?? [],
+      [C.SHOP]: m.shops ?? [],
+      [C.METHOD_PAY]: m.methodPay ?? [],
+    };
     const resultMap = new Map();
     for (const col of colList) {
-      switch (col) {
-        case Constants.SHEET_MASTER.COL.TITLE_SPENDING:
-          resultMap.set(col, getSpendingData());
-          break;
-        case Constants.SHEET_MASTER.COL.TITLE_INCOME:
-          resultMap.set(col, getIncomeData());
-          break;
-        case Constants.SHEET_MASTER.COL.CATEGORY:
-          resultMap.set(col, getSelectOptions(Constants.PROPERTY_SPENDING.CATEGORY));
-          break;
-        case Constants.SHEET_MASTER.COL.SHOP:
-          resultMap.set(col, getSelectOptions(Constants.PROPERTY_SPENDING.SHOP));
-          break;
-        case Constants.SHEET_MASTER.COL.METHOD_PAY:
-          resultMap.set(col, getSelectOptions(Constants.PROPERTY_SPENDING.METHOD_PAY));
-          break;
-        case Constants.SHEET_MASTER.COL.PRODUCT:
-          resultMap.set(col, getProductData());
-          break;
-      }
+      if (byCol[col]) resultMap.set(col, byCol[col]);
     }
     return resultMap;
   }
