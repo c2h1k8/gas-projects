@@ -148,7 +148,7 @@ const MainProcLineRegist = (() => {
     const first = new Date(now.getFullYear(), now.getMonth(), 1);
     const last = new Date(now.getFullYear(), now.getMonth() + 1, 0); // 月末日
     const fmt = (d) => Utilities.formatDate(d, tz, 'yyyy-MM-dd');
-    const items = MoneyApi.listSpending({ from: fmt(first), to: fmt(last) });
+    const items = MoneyApi.searchSpending({ from: fmt(first), to: fmt(last) });
     let total = 0;
     const byCategory = new Map();
     for (const it of items) {

@@ -6,8 +6,6 @@ const PKeys = {
 
   /** 自動登録設定 */
   AUTO_REGIST_SETTING_LIST: 'AUTO_REGIST_SETTING_LIST',
-  /** カレンダーID */
-  CALENDAR_ID_PRIVATE: 'CALENDAR_ID_PRIVATE',
 
   /** Gemini Apiキー */
   GEMINI_API_KEY: 'GEMINI_API_KEY',

@@ -1,6 +1,6 @@
 const MainProcIncome = (() => {
   // ==== Constants ====
-  const SHEET_NAME = '収入更新';
+  const SHEET_NAME = "収入更新";
 
   const ROW_HEADER = 2;
   const ROW_DATA = 3;
@@ -18,14 +18,15 @@ const MainProcIncome = (() => {
   };
 
   const RNG = {
-    TITLE: 'H7',
-    UNFINISHED: 'H8',
-    FROM: 'H9',
-    TO: 'H10',
+    TITLE: "H7",
+    UNFINISHED: "H8",
+    FROM: "H9",
+    TO: "H10",
   };
- 
+
   // ===== Sheet helpers =====
-  const getSheet = () => SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const getSheet = () =>
+    SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
 
   /**
    * データ範囲（チェック列〜最終列）を返す。データが無ければ null
@@ -51,8 +52,8 @@ const MainProcIncome = (() => {
 
   const fmtYmd = (d) => {
     if (!d) return undefined;
-    if (Object.prototype.toString.call(d) === '[object Date]')
-      return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    if (Object.prototype.toString.call(d) === "[object Date]")
+      return Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd");
     return String(d).slice(0, 10);
   };
 
@@ -61,7 +62,7 @@ const MainProcIncome = (() => {
     const title = sheet.getRange(RNG.TITLE).getValue();
     const unfinished = sheet.getRange(RNG.UNFINISHED).getValue();
     return {
-      title: title || '',
+      title: title || "",
       confirmed: unfinished ? 0 : undefined, // 未完了＝未確認(CONFIRMED=0)
       from: fmtYmd(sheet.getRange(RNG.FROM).getValue()),
       to: fmtYmd(sheet.getRange(RNG.TO).getValue()),
@@ -69,7 +70,8 @@ const MainProcIncome = (() => {
   };
 
   // ===== Output helpers =====  items: money API の /api/income items
-  const mapItemsToRows = (items) => items.map(it => [it.uuid, it.name, it.date, it.amount]);
+  const mapItemsToRows = (items) =>
+    items.map((it) => [it.uuid, it.name, it.date, it.amount]);
 
   const sortRows = (rows) => {
     // outData: [id, title, date, amount]
@@ -85,17 +87,21 @@ const MainProcIncome = (() => {
 
     sheet.getRange(ROW_DATA, COL_ID, rowCnt, colCnt).setValues(rows);
   };
-  
+
   const search = () => {
     const sheet = getSheet();
-    
+
     clearDataRange(sheet);
 
     const q = buildQueryFromSheet(sheet);
-    let items = MoneyApi.listIncome({ from: q.from, to: q.to, confirmed: q.confirmed });
-    if (q.title) items = items.filter(it => (it.name || '') === q.title);
+    const items = MoneyApi.searchIncome({
+      from: q.from,
+      to: q.to,
+      title: q.title,
+      unfinished: q.confirmed === 0,
+    });
     if (items.length === 0) {
-      msg('対象のデータがありません。');
+      msg("対象のデータがありません。");
       return false;
     }
 
@@ -108,17 +114,17 @@ const MainProcIncome = (() => {
 
   const validateUpsertRow = (row) => {
     const title = row[IDX.TITLE];
-    if (!title) return { ok: false, reason: '入力内容を見直してください。' };
-    return { ok: true }
-  }
+    if (!title) return { ok: false, reason: "入力内容を見直してください。" };
+    return { ok: true };
+  };
 
   const upsertOne = (row) => {
     const id = row[IDX.ID];
     const rawTitle = row[IDX.TITLE];
     const amount = row[IDX.AMOUNT];
-    
+
     const date = row[IDX.DATE] ? row[IDX.DATE] : new Date();
-    
+
     const title = rawTitle;
 
     if (id) {
@@ -127,14 +133,14 @@ const MainProcIncome = (() => {
       // 新規は money API へ「未確認」で登録
       MoneyApi.registerIncome({ name: title, date, amount });
     }
-  }
+  };
 
   const upsert = () => {
     const sheet = getSheet();
     const rng = getDataRange(sheet);
 
     if (!rng) {
-      msg('更新対象のデータが見つかりません。');
+      msg("更新対象のデータが見つかりません。");
       return false;
     }
 
@@ -158,13 +164,13 @@ const MainProcIncome = (() => {
     const rng = getDataRange(sheet);
 
     if (!rng) {
-      msg('削除対象のデータが見つかりません。');
+      msg("削除対象のデータが見つかりません。");
       return false;
     }
 
     const values = rng.getValues();
     const targets = values.filter((row) => !!row[IDX.CHK]);
-    
+
     for (const row of targets) {
       const id = row[IDX.ID];
       if (id) MoneyApi.deleteIncome(id);
@@ -186,25 +192,40 @@ const handleIncomeError_ = (e) => {
 };
 
 function OnClickSearchIncome() {
-  return withLoading(function () {
-    try {
-      MainProcIncome.search();
-    } catch (e) { handleIncomeError_(e); }
-  }, { startHint: '検索中…', successHint: '検索完了！' });
+  return withLoading(
+    function () {
+      try {
+        MainProcIncome.search();
+      } catch (e) {
+        handleIncomeError_(e);
+      }
+    },
+    { startHint: "検索中…", successHint: "検索完了！" },
+  );
 }
 
 function OnClickUpdateIncome() {
-  return withLoading(function () {
-    try {
-      if (MainProcIncome.upsert()) MainProcIncome.search();
-    } catch (e) { handleIncomeError_(e); }
-  }, { startHint: '更新中…', successHint: '更新完了！' });
+  return withLoading(
+    function () {
+      try {
+        if (MainProcIncome.upsert()) MainProcIncome.search();
+      } catch (e) {
+        handleIncomeError_(e);
+      }
+    },
+    { startHint: "更新中…", successHint: "更新完了！" },
+  );
 }
 
 function OnClickDeleteIncome() {
-  return withLoading(function () {
-    try {
-      if (MainProcIncome.delete()) MainProcIncome.search();
-    } catch (e) { handleIncomeError_(e); }
-  }, { startHint: '削除中…', successHint: '削除完了！' });
+  return withLoading(
+    function () {
+      try {
+        if (MainProcIncome.delete()) MainProcIncome.search();
+      } catch (e) {
+        handleIncomeError_(e);
+      }
+    },
+    { startHint: "削除中…", successHint: "削除完了！" },
+  );
 }
