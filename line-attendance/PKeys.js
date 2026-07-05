@@ -57,4 +57,6 @@ const PKeys = {
   PUNCH_LOG: 'PUNCH_LOG',
   /** 勤怠連絡の送信履歴（JSON Map: { 'yyyy-MM-dd': [カテゴリ...] }） */
   SENT_CONTACTS: 'SENT_CONTACTS',
+  /** 週次サマリー送信済みの週（JSON Map: { 'yyyy-MM-dd'(週の月曜): true }） */
+  WEEKLY_SUMMARY_SENT: 'WEEKLY_SUMMARY_SENT',
 };
