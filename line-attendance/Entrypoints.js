@@ -36,13 +36,6 @@ function checkAttendanceNight() {
 }
 
 /**
- * 週次サマリートリガー（金曜18時想定）。今週＋当月累計・着地見込みを通知。
- */
-function summaryWeekly() {
-  MainProc.notifyWeeklySummary();
-}
-
-/**
  * 月中サマリートリガー（毎月15日9時想定）。当月累計・残業・着地見込みを通知。
  */
 function summaryMidMonth() {

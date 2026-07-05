@@ -644,16 +644,17 @@ const MainProc = (function () {
   };
 
   /**
-   * 週次サマリーをLINEへプッシュします（毎週金曜想定）。
-   * 今週の稼働・残業に加え、当月累計と着地見込みを通知。
+   * 指定日が属する週（月〜金）の稼働・残業に加え、当月累計と着地見込みをLINEへプッシュします。
+   * @param anchorDate 対象週に含まれる任意の日
+   * @return 送信したらtrue（勤務表が無ければ送信せずfalse）
    */
-  const notifyWeeklySummary = () => {
-    const now = new Date();
-    const from = startOfWeekMon(now);
-    const to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-    const week = computeRangeTotals(now, from, to);
-    if (!week) return;
-    const month = getMonthSummaryData(now);
+  const sendWeeklySummary = (anchorDate) => {
+    const from = startOfWeekMon(anchorDate);
+    const fri = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 4);
+    const to = new Date(fri.getFullYear(), fri.getMonth(), fri.getDate(), 23, 59, 59);
+    const week = computeRangeTotals(fri, from, to);
+    if (!week) return false;
+    const month = getMonthSummaryData(fri);
     const metrics = [
       { label: '今週稼働', value: convertMinutes2Hour(week.total) },
       { label: '今週残業', value: convertMinutes2Hour(week.overtime), accent: true },
@@ -662,9 +663,80 @@ const MainProc = (function () {
     const note = month.forecast
       ? `当月着地見込み ${month.forecast} ／ 残業 ${month.overtime}`
       : `当月残業 ${month.overtime}`;
-    const subtitle = `${DateUtils.formatDate(from, 'M/d')}〜${DateUtils.formatDate(now, 'M/d')}`;
+    const subtitle = `${DateUtils.formatDate(from, 'M/d')}〜${DateUtils.formatDate(fri, 'M/d')}`;
     const title = '週次サマリー';
     notifyFlex(title, FlexCards.summary({ title, subtitle, metrics, note }), `${subtitle} / ${JSON.stringify(metrics)} / ${note}`);
+    return true;
+  };
+
+  /**
+   * 週次サマリーを当日基準でLINEへプッシュします（手動テスト用）。
+   */
+  const notifyWeeklySummary = () => sendWeeklySummary(new Date());
+
+  // ===== 週完了時の週次サマリー自動送信 =====
+
+  const getWeeklySummarySent = () => Props.getJson(PKeys.WEEKLY_SUMMARY_SENT) || new Map();
+
+  /**
+   * 指定日1日分が勤務表に登録済みかを判定します。
+   * 稼働/休日出勤は出社・退社の両方が必要、有給/欠勤/代休は区分が入っていれば登録済み。
+   * @param date 対象日
+   * @param sheetCache ファイルID→シートのキャッシュ（週内の再オープン抑止）
+   */
+  const isDayRegistered = (date, sheetCache) => {
+    const ssFile = getFile(date);
+    if (!ssFile) return false;
+    const id = ssFile.getId();
+    let sheet = sheetCache.get(id);
+    if (!sheet) {
+      sheet = getMainSheet(ssFile);
+      sheetCache.set(id, sheet);
+    }
+    const rowNo = date.getDate() + 12;
+    const type = sheet.getRange(rowNo, COLUMN_META.TYPE.NO).getValue();
+    if (!type) return false;
+    if (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING) {
+      const start = getTime(sheet.getRange(rowNo, COLUMN_META.START.NO).getValue());
+      const end = getTime(sheet.getRange(rowNo, COLUMN_META.END.NO).getValue());
+      return !!(start && end);
+    }
+    return true;
+  };
+
+  /**
+   * 指定週（月〜金）の全営業日が勤務表に登録済みかを判定します。
+   * 営業日が1日も無い週はfalse（送信対象なし扱い）。
+   * @param monday 対象週の月曜0時
+   */
+  const isWeekFullyRegistered = (monday) => {
+    const fri = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 4);
+    const sheetCache = new Map();
+    let hasBizDay = false;
+    for (let d = new Date(monday); d <= fri; d.setDate(d.getDate() + 1)) {
+      if (!DateUtils.isBizDate(d)) continue; // 非営業日（土日祝）は対象外
+      hasBizDay = true;
+      if (!isDayRegistered(d, sheetCache)) return false;
+    }
+    return hasBizDay;
+  };
+
+  /**
+   * 登録日が属する週（月〜金）の勤怠がすべて登録され切っていれば、
+   * 週次サマリーを自動送信します（同一週は1回のみ）。
+   * @param date 今回登録した日
+   */
+  const maybeNotifyWeeklyComplete = (date) => {
+    if (_testMode) return;
+    const monday = startOfWeekMon(date);
+    const weekKey = DateUtils.formatDate(monday, 'yyyy-MM-dd');
+    const sent = getWeeklySummarySent();
+    if (sent.get(weekKey)) return; // 送信済みの週はスキップ
+    if (!isWeekFullyRegistered(monday)) return; // まだ埋まっていない
+    if (!sendWeeklySummary(monday)) return;
+    pruneOldEntries(sent);
+    sent.set(weekKey, true);
+    Props.setJson(PKeys.WEEKLY_SUMMARY_SENT, sent);
   };
 
   /**
@@ -1015,6 +1087,9 @@ const MainProc = (function () {
         date: dateStr,
       });
     }
+
+    // その週（月〜金）の勤怠がすべて登録され切ったら、週次サマリーを自動送信（週1回）
+    maybeNotifyWeeklyComplete(date);
   }
 
   /**
@@ -1889,7 +1964,7 @@ const MainProc = (function () {
      */
     checkContactOmissions: (mode) => checkContactOmissions(mode),
     /**
-     * 週次サマリーを通知します（時間主導トリガーから実行）。
+     * 週次サマリーを当日基準で通知します（手動テスト用。自動送信は登録完了時に発火）。
      */
     notifyWeeklySummary: () => notifyWeeklySummary(),
     /**
