@@ -4,6 +4,8 @@ const MainProcUnregisterdExpenseNotification = (function () {
   const IDX_COL_AMOUNT = 2;
   const IDX_COL_NOTE = 3;
 
+  const AUTO_REGIST_SUFFIX = "自動登録";
+
   const pushMessage = (outData) => {
     const rows = outData.map((rowData) => {
       const method = rowData[IDX_COL_METHOD_PAY];
@@ -14,22 +16,24 @@ const MainProcUnregisterdExpenseNotification = (function () {
         sub: note ? `${method}・${note}` : method,
       };
     });
-    LocalUtils.postFlex('家計簿 未登録', NotifyCards.unregistered(rows));
-  }
+    LocalUtils.postFlex("家計簿 未登録", NotifyCards.unregistered(rows));
+  };
 
   return {
     execute: () => {
-      // money API の未確認(CONFIRMED=0)支出を通知対象にする
-      const items = MoneyApi.listUnconfirmed('spending');
+      const items = MoneyApi.searchSpending({
+        unfinished: true,
+        nameEndsWith: AUTO_REGIST_SUFFIX,
+      });
       if (items.length === 0) {
-        Logger.log('対象データなし');
+        Logger.log("対象データなし");
         return false;
       }
       const outData = items.map((it) => [
         it.date,
-        it.method_pay || '',
+        it.method_pay || "",
         it.amount,
-        it.note || '',
+        it.note || "",
       ]);
       // ソート
       const sortMap = new Map([
@@ -41,7 +45,7 @@ const MainProcUnregisterdExpenseNotification = (function () {
       pushMessage(outData);
       return true;
     },
-  }
+  };
 })();
 
 /**

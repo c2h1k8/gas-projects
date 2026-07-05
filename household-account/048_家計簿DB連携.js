@@ -70,23 +70,44 @@ const MoneyApi = (() => {
   const registerIncome = ({ name, date, amount }) =>
     _register('income', { date: _fmtDate(date), name, amount }, name);
 
-  // 一覧取得: /api/{kind}?from&to&confirmed。items 配列を返す（各要素は API の列）。
-  const _list = (kind, opt) => {
-    opt = opt || {};
-    const qs = [];
-    if (opt.from) qs.push('from=' + encodeURIComponent(opt.from));
-    if (opt.to) qs.push('to=' + encodeURIComponent(opt.to));
-    if (opt.confirmed !== undefined && opt.confirmed !== null) qs.push('confirmed=' + opt.confirmed);
-    const r = _request('get', `/api/${kind}${qs.length ? '?' + qs.join('&') : ''}`);
+  /**
+   * 支出を検索する（DSL: POST /api/spending/search）。
+   * 名前/カテゴリ/お店/支払方法/期間/未確認を **すべてサーバ側で絞り込む**
+   * @param {object} cond {title, nameEndsWith, category, methodPay, shop, from, to, unfinished}
+   * @return {Array<object>} /api/spending items（日付降順・金額昇順）
+   */
+  const searchSpending = (cond) => {
+    cond = cond || {};
+    const filters = [];
+    if (cond.from) filters.push({ field: 'date', operator: 'gte', value: _fmtDate(cond.from) });
+    if (cond.to) filters.push({ field: 'date', operator: 'lte', value: _fmtDate(cond.to) });
+    if (cond.title) filters.push({ field: 'name', operator: 'eq', value: cond.title });
+    if (cond.nameEndsWith) filters.push({ field: 'name', operator: 'endsWith', value: cond.nameEndsWith });
+    if (cond.category) filters.push({ field: 'category', operator: 'eq', value: cond.category });
+    if (cond.methodPay) filters.push({ field: 'method_pay', operator: 'eq', value: cond.methodPay });
+    if (cond.shop) filters.push({ field: 'shop', operator: 'eq', value: cond.shop });
+    if (cond.unfinished) filters.push({ field: 'confirmed', operator: 'eq', value: 0 });
+    const r = _request('post', '/api/spending/search', { filters, sort: ['-date', 'amount'] });
     if (!r || r.code < 200 || r.code >= 300) return [];
     try { return JSON.parse(r.text).items || []; } catch (e) { return []; }
   };
-  /** 支出一覧。opt={from,to,confirmed}。@return {Array<object>} */
-  const listSpending = (opt) => _list('spending', opt);
-  /** 収入一覧。opt={from,to,confirmed}。@return {Array<object>} */
-  const listIncome = (opt) => _list('income', opt);
-  /** 未確認（CONFIRMED=0）の一覧。@param {'spending'|'income'} kind */
-  const listUnconfirmed = (kind) => _list(kind, { confirmed: 0 });
+
+  /**
+   * 収入を検索する（DSL: POST /api/income/search）。名前/期間/未確認をサーバ側で絞り込む。
+   * @param {object} cond {title, from, to, unfinished}
+   * @return {Array<object>} /api/income items（日付降順・金額昇順）
+   */
+  const searchIncome = (cond) => {
+    cond = cond || {};
+    const filters = [];
+    if (cond.from) filters.push({ field: 'date', operator: 'gte', value: _fmtDate(cond.from) });
+    if (cond.to) filters.push({ field: 'date', operator: 'lte', value: _fmtDate(cond.to) });
+    if (cond.title) filters.push({ field: 'name', operator: 'eq', value: cond.title });
+    if (cond.unfinished) filters.push({ field: 'confirmed', operator: 'eq', value: 0 });
+    const r = _request('post', '/api/income/search', { filters, sort: ['-date', 'amount'] });
+    if (!r || r.code < 200 || r.code >= 300) return [];
+    try { return JSON.parse(r.text).items || []; } catch (e) { return []; }
+  };
 
   const _update = (kind, uuid, payload, label) => {
     const r = _request('patch', `/api/${kind}/${uuid}`, payload);
@@ -128,7 +149,7 @@ const MoneyApi = (() => {
 
   return {
     registerSpending, registerIncome,
-    listSpending, listIncome, listUnconfirmed,
+    searchSpending, searchIncome,
     updateSpending, updateIncome,
     deleteSpending, deleteIncome,
     getMasters,
