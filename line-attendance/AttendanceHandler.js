@@ -195,14 +195,16 @@ const MainProc = (function () {
   // ===== 履歴の保持管理 =====
 
   /**
-   * 当月より前の日付エントリ（'yyyy-MM-dd'キー）を削除します。
+   * 前月より前の日付エントリ（'yyyy-MM-dd'キー）を削除します。
+   * 月マタギの週（前月末〜当月）は最古の日が前月に入るため、前月分は残す。
    * @return 削除があればtrue
    */
   const pruneOldEntries = (map) => {
-    const curYm = DateUtils.formatDate(new Date(), 'yyyy-MM');
+    const now = new Date();
+    const cutoffYm = DateUtils.formatDate(new Date(now.getFullYear(), now.getMonth() - 1, 1), 'yyyy-MM');
     let removed = false;
     for (const key of map.keys()) {
-      if (typeof key === 'string' && key.slice(0, 7) < curYm) {
+      if (typeof key === 'string' && key.slice(0, 7) < cutoffYm) {
         map.delete(key);
         removed = true;
       }
@@ -214,19 +216,25 @@ const MainProc = (function () {
 
   const getPunchLog = () => Props.getJson(PKeys.PUNCH_LOG) || new Map();
 
+  /** 休暇系（勤務時間を伴わない区分）か */
+  const isLeaveType = (type) => type === TYPE.REST || type === TYPE.HOLIDAY || type === TYPE.DAIKYU;
+
   /**
-   * 勤怠開始/終了のLINE登録を記録します（既存の登録はOR合成）。
+   * 勤怠のLINE登録を記録します（連絡漏れ監視・週完了判定で使用）。
+   * 稼働/休出は開始/終了をOR合成、休暇系は勤務時間を持たず区分のみ記録します。
    * @param date 対象日
-   * @param flags { start: 開始登録あり, end: 終了登録あり }
+   * @param flags { start: 開始登録あり, end: 終了登録あり, type: 勤怠区分 }
    */
-  const recordPunch = (date, { start, end }) => {
+  const recordPunch = (date, { start = false, end = false, type = '' }) => {
     if (_testMode) return;
     const key = DateUtils.formatDate(date, 'yyyy-MM-dd');
     const log = getPunchLog();
     pruneOldEntries(log);
-    const cur = log.get(key) || { start: false, end: false };
+    // 休暇系は勤務時間の概念が無いため、既存の出退勤フラグをリセットして区分のみ保持
+    const cur = isLeaveType(type) ? { start: false, end: false } : (log.get(key) || { start: false, end: false });
     cur.start = cur.start || !!start;
     cur.end = cur.end || !!end;
+    cur.type = type || cur.type || '';
     log.set(key, cur);
     Props.setJson(PKeys.PUNCH_LOG, log);
   };
@@ -644,16 +652,16 @@ const MainProc = (function () {
   };
 
   /**
-   * 指定日が属する週（月〜金）の稼働・残業に加え、当月累計と着地見込みをLINEへプッシュします。
+   * 指定週（月〜金）の週次サマリー表示内容を組み立てます。
    * @param anchorDate 対象週に含まれる任意の日
-   * @return 送信したらtrue（勤務表が無ければ送信せずfalse）
+   * @return { subtitle, metrics, note, signature } / 勤務表が無ければnull
    */
-  const sendWeeklySummary = (anchorDate) => {
+  const buildWeeklySummary_ = (anchorDate) => {
     const from = startOfWeekMon(anchorDate);
     const fri = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 4);
     const to = new Date(fri.getFullYear(), fri.getMonth(), fri.getDate(), 23, 59, 59);
     const week = computeRangeTotals(fri, from, to);
-    if (!week) return false;
+    if (!week) return null;
     const month = getMonthSummaryData(fri);
     const metrics = [
       { label: '今週稼働', value: convertMinutes2Hour(week.total) },
@@ -664,8 +672,33 @@ const MainProc = (function () {
       ? `当月着地見込み ${month.forecast} ／ 残業 ${month.overtime}`
       : `当月残業 ${month.overtime}`;
     const subtitle = `${DateUtils.formatDate(from, 'M/d')}〜${DateUtils.formatDate(fri, 'M/d')}`;
+    // 再送要否の判定に使う表示内容のシグネチャ（内容が変われば再送）
+    const signature = `${subtitle}|${JSON.stringify(metrics)}|${note}`;
+    return { subtitle, metrics, note, signature };
+  };
+
+  /**
+   * 週次サマリーをLINEへプッシュします。
+   * @param data buildWeeklySummary_の戻り値
+   */
+  const pushWeeklySummary_ = (data) => {
     const title = '週次サマリー';
-    notifyFlex(title, FlexCards.summary({ title, subtitle, metrics, note }), `${subtitle} / ${JSON.stringify(metrics)} / ${note}`);
+    notifyFlex(
+      title,
+      FlexCards.summary({ title, subtitle: data.subtitle, metrics: data.metrics, note: data.note }),
+      `${data.subtitle} / ${JSON.stringify(data.metrics)} / ${data.note}`
+    );
+  };
+
+  /**
+   * 指定日が属する週の稼働・残業・当月累計をLINEへプッシュします。
+   * @param anchorDate 対象週に含まれる任意の日
+   * @return 送信したらtrue（勤務表が無ければ送信せずfalse）
+   */
+  const sendWeeklySummary = (anchorDate) => {
+    const data = buildWeeklySummary_(anchorDate);
+    if (!data) return false;
+    pushWeeklySummary_(data);
     return true;
   };
 
@@ -679,63 +712,56 @@ const MainProc = (function () {
   const getWeeklySummarySent = () => Props.getJson(PKeys.WEEKLY_SUMMARY_SENT) || new Map();
 
   /**
-   * 指定日1日分が勤務表に登録済みかを判定します。
-   * 稼働/休日出勤は出社・退社の両方が必要、有給/欠勤/代休は区分が入っていれば登録済み。
-   * @param date 対象日
-   * @param sheetCache ファイルID→シートのキャッシュ（週内の再オープン抑止）
+   * 指定日1日分がLINEで登録済みかをPUNCH_LOGで判定します。
+   * 勤務表はデフォルト値で埋まっているため、実際のLINE登録有無はプロパティで判断する。
+   * 稼働/休日出勤は退勤登録済み（end）が必要、有給/欠勤/代休は区分が入っていれば登録済み。
+   * @param dateStr 対象日 'yyyy-MM-dd'
+   * @param punchLog PUNCH_LOGのMap
    */
-  const isDayRegistered = (date, sheetCache) => {
-    const ssFile = getFile(date);
-    if (!ssFile) return false;
-    const id = ssFile.getId();
-    let sheet = sheetCache.get(id);
-    if (!sheet) {
-      sheet = getMainSheet(ssFile);
-      sheetCache.set(id, sheet);
+  const isDayRegistered = (dateStr, punchLog) => {
+    const punch = punchLog.get(dateStr);
+    if (!punch || !punch.type) return false;
+    if (punch.type === TYPE.WORKING || punch.type === TYPE.HOLIDAY_WORKING) {
+      return !!punch.end; // 退勤登録まで済んで初めて完了
     }
-    const rowNo = date.getDate() + 12;
-    const type = sheet.getRange(rowNo, COLUMN_META.TYPE.NO).getValue();
-    if (!type) return false;
-    if (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING) {
-      const start = getTime(sheet.getRange(rowNo, COLUMN_META.START.NO).getValue());
-      const end = getTime(sheet.getRange(rowNo, COLUMN_META.END.NO).getValue());
-      return !!(start && end);
-    }
-    return true;
+    return true; // 休暇系は区分の登録で完了
   };
 
   /**
-   * 指定週（月〜金）の全営業日が勤務表に登録済みかを判定します。
+   * 指定週（月〜金）の全営業日がLINEで登録済みかを判定します。
    * 営業日が1日も無い週はfalse（送信対象なし扱い）。
    * @param monday 対象週の月曜0時
    */
   const isWeekFullyRegistered = (monday) => {
     const fri = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 4);
-    const sheetCache = new Map();
+    const punchLog = getPunchLog();
     let hasBizDay = false;
     for (let d = new Date(monday); d <= fri; d.setDate(d.getDate() + 1)) {
       if (!DateUtils.isBizDate(d)) continue; // 非営業日（土日祝）は対象外
       hasBizDay = true;
-      if (!isDayRegistered(d, sheetCache)) return false;
+      if (!isDayRegistered(DateUtils.formatDate(d, 'yyyy-MM-dd'), punchLog)) return false;
     }
     return hasBizDay;
   };
 
   /**
    * 登録日が属する週（月〜金）の勤怠がすべて登録され切っていれば、
-   * 週次サマリーを自動送信します（同一週は1回のみ）。
+   * 週次サマリーを自動送信します。前回送信と内容が同じ週はスキップし、
+   * 修正で内容が変わった場合のみ最新値で再送します。
    * @param date 今回登録した日
    */
   const maybeNotifyWeeklyComplete = (date) => {
     if (_testMode) return;
     const monday = startOfWeekMon(date);
+    if (!isWeekFullyRegistered(monday)) return; // まだ埋まっていない
+    const data = buildWeeklySummary_(monday);
+    if (!data) return;
     const weekKey = DateUtils.formatDate(monday, 'yyyy-MM-dd');
     const sent = getWeeklySummarySent();
-    if (sent.get(weekKey)) return; // 送信済みの週はスキップ
-    if (!isWeekFullyRegistered(monday)) return; // まだ埋まっていない
-    if (!sendWeeklySummary(monday)) return;
+    if (sent.get(weekKey) === data.signature) return; // 前回送信と内容が同じならスキップ
+    pushWeeklySummary_(data);
     pruneOldEntries(sent);
-    sent.set(weekKey, true);
+    sent.set(weekKey, data.signature);
     Props.setJson(PKeys.WEEKLY_SUMMARY_SENT, sent);
   };
 
@@ -1069,9 +1095,11 @@ const MainProc = (function () {
     });
     LineManager.replyFlex(replyToken, `${cardType} 登録`, card);
 
-    // 勤怠開始/終了のLINE登録履歴を記録（連絡漏れ監視で使用）
+    // 勤怠のLINE登録履歴を記録（連絡漏れ監視・週完了判定で使用）
     if (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING) {
-      recordPunch(date, { start: startProvided, end: shouldUpdEnd });
+      recordPunch(date, { start: startProvided, end: shouldUpdEnd, type });
+    } else if (isLeaveType(type)) {
+      recordPunch(date, { type });
     } else if (cardType === TYPE.CLEAR) {
       clearPunch(date);
     }
@@ -1403,7 +1431,7 @@ const MainProc = (function () {
    * @param dayDate 対象日（営業日判定に使用）
    */
   const neededCategoriesFromSheet_ = (type, start, end, dayDate) => {
-    if (type === TYPE.REST || type === TYPE.HOLIDAY || type === TYPE.DAIKYU) {
+    if (isLeaveType(type)) {
       return [CONTACT_CATEGORY.ABSENCE];
     }
     if (type === TYPE.HOLIDAY_WORKING) {
@@ -1753,7 +1781,7 @@ const MainProc = (function () {
       sheetByDate.set(dateStr, { type, start, end, label });
 
       // 欠勤系の日は欠勤連絡のみ判定（他チェックの対象外）
-      if (type === TYPE.REST || type === TYPE.HOLIDAY || type === TYPE.DAIKYU) {
+      if (isLeaveType(type)) {
         if (!contacts.includes(CONTACT_CATEGORY.ABSENCE)) absence.push(label);
         continue;
       }
@@ -1794,7 +1822,7 @@ const MainProc = (function () {
     const isReflected = (cat, info) => {
       switch (cat) {
         case CONTACT_CATEGORY.ABSENCE:
-          return info.type === TYPE.REST || info.type === TYPE.HOLIDAY || info.type === TYPE.DAIKYU;
+          return isLeaveType(info.type);
         case CONTACT_CATEGORY.LATE_WORK:
           return isLateStart(info.start);
         case CONTACT_CATEGORY.EARLY_WORK:
