@@ -92,6 +92,20 @@ clasp_json() {
 EOF
 }
 
+# clasp push をリトライ付きで実行する。
+# CIランナー↔Google API 間で時折発生する "Premature close" 対策（指数的に待機して再試行）。
+push_with_retry() {
+  local p="$1" n=1 max=6 wait
+  while true; do
+    if (cd "$p" && clasp push -f); then return 0; fi
+    if [ "$n" -ge "$max" ]; then return 1; fi
+    wait=$((n * 15)); [ "$wait" -gt 60 ] && wait=60
+    echo "    push失敗（$n/$max）。${wait}秒後に再試行..."
+    sleep "$wait"
+    n=$((n + 1))
+  done
+}
+
 failed=()
 for project in $targets; do
   sid=$(echo "$SCRIPT_IDS" | jq -r --arg p "$project" '.[$p] // empty')
@@ -105,7 +119,7 @@ for project in $targets; do
   fi
   clasp_json "$sid" > "$project/.clasp.json"
   echo "==> push: $project"
-  if (cd "$project" && clasp push -f); then
+  if push_with_retry "$project"; then
     echo "    OK"
   else
     echo "    FAILED"
