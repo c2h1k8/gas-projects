@@ -271,6 +271,12 @@ const MainProcLineRegist = (() => {
         return;
       }
       case 'cancel': {
+        // 未確認かつ存在するものだけ取り消せる（ヒット無し＝削除済み or 確定済み）
+        const target = MoneyApi.searchSpending({ uuid: data.p, unfinished: true })[0];
+        if (!target) {
+          replyText(replyToken, '削除済みまたは確定済みのため取り消せません。');
+          return;
+        }
         MoneyApi.deleteSpending(data.p);
         replyText(replyToken, '🗑️ 登録を取り消しました。');
         return;
