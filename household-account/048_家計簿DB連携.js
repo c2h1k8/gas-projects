@@ -73,12 +73,13 @@ const MoneyApi = (() => {
   /**
    * 支出を検索する（DSL: POST /api/spending/search）。
    * 名前/カテゴリ/お店/支払方法/期間/未確認を **すべてサーバ側で絞り込む**
-   * @param {object} cond {title, nameEndsWith, category, methodPay, shop, from, to, unfinished}
+   * @param {object} cond {uuid, title, nameEndsWith, category, methodPay, shop, from, to, unfinished}
    * @return {Array<object>} /api/spending items（日付降順・金額昇順）
    */
   const searchSpending = (cond) => {
     cond = cond || {};
     const filters = [];
+    if (cond.uuid) filters.push({ field: 'uuid', operator: 'eq', value: cond.uuid });
     if (cond.from) filters.push({ field: 'date', operator: 'gte', value: _fmtDate(cond.from) });
     if (cond.to) filters.push({ field: 'date', operator: 'lte', value: _fmtDate(cond.to) });
     if (cond.title) filters.push({ field: 'name', operator: 'eq', value: cond.title });
