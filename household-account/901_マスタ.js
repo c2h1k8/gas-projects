@@ -49,7 +49,7 @@ const MainProcMaster = (() => {
       [C.TITLE_SPENDING]: spendingNames,
       [C.TITLE_INCOME]: m.incomeNames ?? [],
       [C.CATEGORY]: m.categories ?? [],
-      [C.SHOP]: m.shops ?? [],
+      [C.PAYEE]: m.payees ?? [],
       [C.METHOD_PAY]: m.methodPay ?? [],
     };
     const resultMap = new Map();

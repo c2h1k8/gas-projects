@@ -11,7 +11,7 @@ const MainProcUpdate = (function () {
   const RNG_SEARCH_CONDITION_FROM = "N10";
   const RNG_SEARCH_CONDITION_TO = "N11";
   const RNG_SEARCH_CONDITION_METHOD_PAY = "N12";
-  const RNG_SEARCH_CONDITION_SHOP = "N13";
+  const RNG_SEARCH_CONDITION_PAYEE = "N13";
 
   const getSheet = () =>
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("支出更新");
@@ -39,7 +39,7 @@ const MainProcUpdate = (function () {
 
   /**
    * 検索条件で money API から支出を取得します。
-   * 名前/カテゴリ/お店/支払方法も money API に渡す（DSL: /api/spending/search）。
+   * 名前/カテゴリ/支払先/支払方法も money API に渡す（DSL: /api/spending/search）。
    * @param {Sheet} sheet - 検索条件を持つシート
    * @return {Array<object>} /api/spending items
    */
@@ -56,7 +56,7 @@ const MainProcUpdate = (function () {
     const methodPay = sheet
       .getRange(RNG_SEARCH_CONDITION_METHOD_PAY)
       .getValue();
-    const shop = sheet.getRange(RNG_SEARCH_CONDITION_SHOP).getValue();
+    const payee = sheet.getRange(RNG_SEARCH_CONDITION_PAYEE).getValue();
 
     const items = MoneyApi.searchSpending({
       from: fmtYmd(periodFrom),
@@ -64,7 +64,7 @@ const MainProcUpdate = (function () {
       title,
       category,
       methodPay,
-      shop,
+      payee,
       unfinished: !!unfinished, // 未完了＝未確認(CONFIRMED=0)
     });
 
@@ -100,7 +100,7 @@ const MainProcUpdate = (function () {
         it.category || "",
         it.date,
         it.amount,
-        it.shop || "",
+        it.payee || "",
         it.method_pay || "",
         it.url || "",
         it.note || "",
@@ -157,7 +157,7 @@ const MainProcUpdate = (function () {
           category,
           date,
           amount,
-          shop,
+          payee,
           methodPay,
           url,
           note,
@@ -184,7 +184,7 @@ const MainProcUpdate = (function () {
           date,
           category,
           amount,
-          shop,
+          payee,
           methodPay,
           url,
           note,
