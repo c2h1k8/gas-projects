@@ -114,10 +114,14 @@ const MainProcFixedCost = (function () {
           continue;
         }
 
-        // 冪等化（出所タグ）: この定義がその発生月に既に登録済みなら投げない＝通知の重複も防ぐ。
-        // posted は GET /api/fixed-costs が返す {発生月YM: 登録日}。money 側も (id, ym) 重複を弾く（多重防御）。
+        // その発生月が「登録済み」または「スキップ指定（補助/無償）」なら投げない＝通知の重複も防ぐ。
+        // posted={発生月YM:登録日}・skipped=[発生月YM,…]（GET /api/fixed-costs）。money 側も多重防御。
         if (def.posted && def.posted[due.ym]) {
           Logger.log(`既登録につきスキップ: ${def.title} ${due.ym}`);
+          continue;
+        }
+        if (def.skipped && def.skipped.indexOf(due.ym) >= 0) {
+          Logger.log(`スキップ指定月: ${def.title} ${due.ym}`);
           continue;
         }
 
