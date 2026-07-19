@@ -4,7 +4,7 @@
  * 新規の支出/収入は money API へ「未確認(CONFIRMED=0)」で登録する
  * （Notion からカットオーバー済み）。money 側は画面の「未確認」タブで
  * 確認・確定するまで本体集計に入らない。
- * カテゴリ/お店/支払方法は「名前」で送り、サーバが既存マスタからコード解決する
+ * カテゴリ/支払先/支払方法は「名前」で送り、サーバが既存マスタからコード解決する
  * （無ければ NULL＝確定時に割り当て）。ペイロードは Notion のページ構造とは独立。
  *
  * 設定（スクリプトプロパティ）:
@@ -59,21 +59,25 @@ const MoneyApi = (() => {
    * 支出を「未確認」で登録する。confirmed は送らない＝サーバ既定(未確認0)。
    * @return {string|null} 作成された uuid（成功時）
    */
-  const registerSpending = ({ name, date, amount, category, methodPay, shop, url, note, expenseRatio }) =>
+  const registerSpending = ({ name, date, amount, category, methodPay, payee, url, note, expenseRatio, fixedCostId, fixedCostYm }) =>
     _register('spending', {
       date: _fmtDate(date), name, amount,
-      category: category || null, method_pay: methodPay || null, shop: shop || null,
+      category: category || null, method_pay: methodPay || null, payee: payee || null,
       url: url || null, note: note || null, expense_ratio: expenseRatio || 0,
+      fixed_cost_id: fixedCostId || null, fixed_cost_ym: fixedCostYm || null,
     }, name);
 
   /** 収入を「未確認」で登録する。 @return {string|null} uuid */
-  const registerIncome = ({ name, date, amount }) =>
-    _register('income', { date: _fmtDate(date), name, amount }, name);
+  const registerIncome = ({ name, date, amount, fixedCostId, fixedCostYm }) =>
+    _register('income', {
+      date: _fmtDate(date), name, amount,
+      fixed_cost_id: fixedCostId || null, fixed_cost_ym: fixedCostYm || null,
+    }, name);
 
   /**
    * 支出を検索する（DSL: POST /api/spending/search）。
-   * 名前/カテゴリ/お店/支払方法/期間/未確認を **すべてサーバ側で絞り込む**
-   * @param {object} cond {uuid, title, nameEndsWith, category, methodPay, shop, from, to, unfinished}
+   * 名前/カテゴリ/支払先/支払方法/期間/未確認を **すべてサーバ側で絞り込む**
+   * @param {object} cond {uuid, title, nameEndsWith, category, methodPay, payee, from, to, unfinished}
    * @return {Array<object>} /api/spending items（日付降順・金額昇順）
    */
   const searchSpending = (cond) => {
@@ -86,7 +90,7 @@ const MoneyApi = (() => {
     if (cond.nameEndsWith) filters.push({ field: 'name', operator: 'endsWith', value: cond.nameEndsWith });
     if (cond.category) filters.push({ field: 'category', operator: 'eq', value: cond.category });
     if (cond.methodPay) filters.push({ field: 'method_pay', operator: 'eq', value: cond.methodPay });
-    if (cond.shop) filters.push({ field: 'shop', operator: 'eq', value: cond.shop });
+    if (cond.payee) filters.push({ field: 'payee', operator: 'eq', value: cond.payee });
     if (cond.unfinished) filters.push({ field: 'confirmed', operator: 'eq', value: 0 });
     const r = _request('post', '/api/spending/search', { filters, sort: ['-date', 'amount'] });
     if (!r || r.code < 200 || r.code >= 300) return [];
@@ -116,11 +120,11 @@ const MoneyApi = (() => {
     Logger.log(`[MoneyApi] update ${kind} ${label} -> ${r ? r.code : 'skip'}${(ok || !r) ? '' : ' ' + r.text}`);
     return ok;
   };
-  /** 支出を更新する（カテゴリ/お店/支払方法は名前でOK＝サーバ解決）。@return {boolean} */
-  const updateSpending = (uuid, { name, date, amount, category, methodPay, shop, url, note, expenseRatio }) =>
+  /** 支出を更新する（カテゴリ/支払先/支払方法は名前でOK＝サーバ解決）。@return {boolean} */
+  const updateSpending = (uuid, { name, date, amount, category, methodPay, payee, url, note, expenseRatio }) =>
     _update('spending', uuid, {
       date: _fmtDate(date), name, amount,
-      category: category || null, method_pay: methodPay || null, shop: shop || null,
+      category: category || null, method_pay: methodPay || null, payee: payee || null,
       url: url || null, note: note || null, expense_ratio: expenseRatio || 0,
     }, name);
   /** 収入を更新する。@return {boolean} */
@@ -140,12 +144,24 @@ const MoneyApi = (() => {
 
   /**
    * スプレッドシート マスタ更新用の名称リストを取得する。
-   * @return {object} {spendingNames, incomeNames, categories, shops, methodPay}
+   * @return {object} {spendingNames, incomeNames, categories, payees, methodPay}
    */
   const getMasters = () => {
     const r = _request('get', '/api/masters');
     if (!r || r.code < 200 || r.code >= 300) return {};
     try { return JSON.parse(r.text) || {}; } catch (e) { return {}; }
+  };
+
+  /**
+   * 固定費 自動登録の定義一覧を取得する（旧スプレッドシート「固定費自動登録」の代替）。
+   * money 側（マスタ管理タブ）で編集した定義を読み、GAS が対象日に登録する。
+   * @return {Array<object>} [{id,enabled,type,title,amount,category,payee,methodPay,
+   *   note,expenseRatio,months,day,bizAdjust,yearInterval,yearAnchor,validFrom,validTo,createdYm}]
+   */
+  const getFixedCosts = () => {
+    const r = _request('get', '/api/fixed-costs');
+    if (!r || r.code < 200 || r.code >= 300) return [];
+    try { return JSON.parse(r.text) || []; } catch (e) { return []; }
   };
 
   return {
@@ -154,5 +170,6 @@ const MoneyApi = (() => {
     updateSpending, updateIncome,
     deleteSpending, deleteIncome,
     getMasters,
+    getFixedCosts,
   };
 })();

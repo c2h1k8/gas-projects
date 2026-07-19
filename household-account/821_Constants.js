@@ -22,7 +22,7 @@ const Constants = (function () {
         TITLE_SPENDING: 2,
         TITLE_INCOME: 3,
         CATEGORY: 4,
-        SHOP: 5,
+        PAYEE: 5,
         METHOD_PAY: 6,
         LINE_CATEGORY: 7,
         LINE_METHOD_PAY: 8,

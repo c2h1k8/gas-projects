@@ -30,64 +30,64 @@ const MainProcMailAI = (() => {
     return result;
   };
 
-  const getShopData = (shop) => ({
-    name: shop?.candidate ?? '',
-    note: shop?.raw ?? ''
+  const getPayeeData = (payee) => ({
+    name: payee?.candidate ?? '',
+    note: payee?.raw ?? ''
   });
 
   /**
    * 通知カード用の明細項目を構築します。
    * @return {{label, amount, sub}}
    */
-  const buildItem = (date, shopData, amount, method, note) => ({
-    label: shopData.note || shopData.name || '(店舗不明)',
+  const buildItem = (date, payeeData, amount, method, note) => ({
+    label: payeeData.note || payeeData.name || '(店舗不明)',
     amount,
     sub: `${method}・${DateUtils.formatDate(date, 'M/d')}${note ? '・' + note : ''}`,
   });
 
-  const getMailAnalyzePrompt = ({ mailBody, shopList }) => {
+  const getMailAnalyzePrompt = ({ mailBody, payeeList }) => {
     const template = Props.getValue(PKeys.MAIL_AI_ANALYZE_PROMPT);
     if (!template) {
       throw new Error(`${PKeys.MAIL_AI_ANALYZE_PROMPT} is not defined`);
     }
 
     return template
-      .replace('{{SHOP_LIST}}', shopList.join(','))
+      .replace('{{PAYEE_LIST}}', payeeList.join(','))
       .replace('{{MAIL_BODY}}', mailBody);
   }
 
-  const analyzeMailBody = (text, shopList) => {
+  const analyzeMailBody = (text, payeeList) => {
     const prompt = getMailAnalyzePrompt({
       mailBody: text,
-      shopList
+      payeeList
     });
 
     return GoogleApi.analyzeByGemini(prompt, Props.getValue(PKeys.GEMINI_API_KEY))
   }
 
-  const processMessage =  (message, setting, shopList, msgList) => {
+  const processMessage =  (message, setting, payeeList, msgList) => {
     const maskedBody = maskPersonalInfo(message.getPlainBody());
     Logger.log(maskedBody);
-    const result = analyzeMailBody(maskedBody, shopList);
+    const result = analyzeMailBody(maskedBody, payeeList);
     Logger.log(result);
 
     let success = true;
 
     for (const item of result.items ?? []) {
       const date = item.date ? new Date(item.date) : message.getDate();
-      const shopData = getShopData(item.shop);
+      const payeeData = getPayeeData(item.payee);
       const amount = item.amount ?? 0;
 
       const res = CONFIG.DEBUG ? true : MoneyApi.registerSpending({
         name: `${setting.TITLE}自動登録`,
         date,
         amount,
-        shop: shopData.name,
+        payee: payeeData.name,
         methodPay: setting.METHOD_PAY,
         url: item.url,
-        note: item.note || shopData.note,
+        note: item.note || payeeData.note,
       });
-      const entry = buildItem(date, shopData, amount, setting.METHOD_PAY, item.note);
+      const entry = buildItem(date, payeeData, amount, setting.METHOD_PAY, item.note);
 
       if (amount === 0) {
         msgList.SKIP.push(entry);
@@ -109,7 +109,7 @@ const MainProcMailAI = (() => {
      * メール本文を解析し、家計簿データを自動登録します。
      */
     create: () => {
-      const shopList = SpreadsheetApp.getActiveSpreadsheet().getRangeByName('お店').getValues().flat();
+      const payeeList = SpreadsheetApp.getActiveSpreadsheet().getRangeByName('お店').getValues().flat();
       const settings = Props.getJson(PKeys.AUTO_REGIST_SETTING_LIST);
       
       const msgList = { SUCCESS: [], FAIL: [], SKIP: [] };
@@ -118,7 +118,7 @@ const MainProcMailAI = (() => {
         for (const thread of threads) {
           for (const message of thread.getMessages()) {
             if (!message.isStarred()) continue;
-            processMessage(message, setting, shopList, msgList);
+            processMessage(message, setting, payeeList, msgList);
           }
         }
       }

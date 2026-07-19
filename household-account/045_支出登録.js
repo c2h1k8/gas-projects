@@ -6,7 +6,7 @@ const MainProcRegist = (function () {
   const COL_CATEGORY = 4;
   const COL_DATE = 5;
   const COL_AMOUNT = 6;
-  const COL_SHOP = 7;
+  const COL_PAYEE = 7;
   const COL_METHOD_PAY = 8;
   const COL_URL = 9;
   const COL_NOTE = 10;
@@ -25,7 +25,7 @@ const MainProcRegist = (function () {
         let date = sheet.getRange(i, COL_DATE).getValue();
         if (!date) date = new Date();
         const amount = sheet.getRange(i, COL_AMOUNT).getValue();
-        const shop = sheet.getRange(i, COL_SHOP).getValue();
+        const payee = sheet.getRange(i, COL_PAYEE).getValue();
         const methodPay = sheet.getRange(i, COL_METHOD_PAY).getValue();
         const url = sheet.getRange(i, COL_URL).getValue();
         const note = sheet.getRange(i, COL_NOTE).getValue();
@@ -36,7 +36,7 @@ const MainProcRegist = (function () {
           date,
           category,
           amount,
-          shop,
+          payee,
           methodPay,
           url,
           note,

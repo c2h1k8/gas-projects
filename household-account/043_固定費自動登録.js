@@ -1,122 +1,148 @@
+/**
+ * 固定費 自動登録。
+ *
+ * 【方針転換】設定はスプレッドシートではなく money 側（マスタ管理タブ = M_FIXED_COST）で
+ * 管理する。GAS は日次トリガーで定義を GET し、対象日に money API へ「未確認」で登録する。
+ * 判定（対象月・営業日/祝日補正・月末・有効期間・隔年）と通知はここに残す。
+ *
+ * 冪等化（出所タグ）: 生成する取引に fixed_cost_id ＋ fixed_cost_ym（発生月）を刻む。GET が返す
+ * def.posted{発生月YM:登録日} で既登録月はスキップ（通知の重複も防ぐ）、money 側も (id, ym) の
+ * 重複を弾く（多重防御）。取引日/金額を後から編集・翌月へ動かしても発生月YMは不変なので、
+ * 翌月分は別途登録される。定義側に登録実績カラムは持たない（T_SPENDING/T_INCOME が唯一の正）。
+ * 取りこぼしは予定日〜数日（CATCHUP_DAYS）内なら追いつく。
+ *
+ * 定義フィールド（GET /api/fixed-costs）:
+ *   id, enabled, type('支出'|'収入'), title, amount, category, payee, methodPay, note, expenseRatio,
+ *   months(''=毎月 / '1,7' / '1,3,5,7,9,11'), day(1-31, 0=月末),
+ *   bizAdjust('none'|'prev'|'next'), yearInterval(1=毎年,2=隔年…), yearAnchor(基準年|null),
+ *   validFrom/validTo('YYYY-MM'|''), posted({発生月YM:登録日})
+ */
 const MainProcFixedCost = (function () {
-  const SHEET_NAME = '固定費自動登録';
-  const ROW_HEADER = 2;
-  const ROW_DATA = 3;
-  const COL_TYPE = 2;
-  const IDX_COL_TYPE = 0;
-  const IDX_COL_MONTH = 1;
-  const IDX_COL_DAY = 2;
-  const IDX_COL_BIZ_PREV = 3;
-  const IDX_COL_BIZ_NEXT = 4;
-  const IDX_COL_TITLE = 5;
-  const IDX_COL_CATEGORY = 6;
-  const IDX_COL_AMOUNT = 7;
-  const IDX_COL_SHOP = 8;
-  const IDX_COL_METHOD_PAY = 9;
-  const IDX_COL_NOTE = 10;
-  const IDX_COL_EXPENSE_RATIO = 11;
 
-  const getData = () => {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-    const rowCnt = SpreadUtils.getEndRow(sheet, COL_TYPE) - ROW_HEADER;
-    const colCnt = SpreadUtils.getEndCol(sheet, ROW_HEADER) - COL_TYPE + 1;
-    if (rowCnt === 0) {
-      return undefined;
-    }
-    return sheet.getRange(ROW_DATA, COL_TYPE, rowCnt, colCnt).getValues();
-  }
+  // 取りこぼしの追いつき猶予（日）。予定日にトリガーが落ちても数日内なら登録する。
+  // 広げすぎると「月途中で追加した定義がその月に遡って登録される」誤爆になるため短めに。
+  const CATCHUP_DAYS = 3;
 
-  const isRegistMonth = (targetMonths) => {
-    if (!targetMonths) {
-      // 対象月が未設定の場合、登録対象月
-      return true;
-    }
-    const currentMonth = new Date().getMonth() + 1;
-    if (typeof targetMonths === 'number') {
-      // 単月の場合
-      return targetMonths === currentMonth;
-    }
+  // 対象月 csv を数値配列へ。空=毎月(null)。
+  const parseMonths_ = (raw) => {
+    if (raw === null || raw === undefined || raw === '') return null;
+    if (typeof raw === 'number') return [raw];
+    const arr = String(raw).split(',')
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => n >= 1 && n <= 12);
+    return arr.length ? arr : null;
+  };
 
-    if (targetMonths.split(',').includes(currentMonth.toString())) {
-      // 複数月で対象月に含まれる場合、登録対象月
-      return true;
-    }
-    return false;
-  }
+  // 隔年ゲート: yearInterval>1 のとき (year - anchor) % interval === 0 の年だけ対象。
+  const isYearDue_ = (def, year) => {
+    const interval = Number(def.yearInterval) || 1;
+    if (interval <= 1) return true;
+    const anchor = def.yearAnchor;
+    if (anchor === null || anchor === undefined || anchor === '') return true;
+    return (((year - Number(anchor)) % interval) + interval) % interval === 0;
+  };
 
-  const isRegistDate = (day, isBizPrev, isBizNext) => {
-    const now = new Date();
+  const pad2_ = (n) => String(n).padStart(2, '0');
 
-    // 候補月: 今月に加え、営業日調整で月をまたぐケースを考慮する
-    // isBizNext: 前月の設定日の翌営業日が今月になる場合（例: 2/28(土) → 3/2）
-    // isBizPrev: 翌月の設定日の前営業日が今月になる場合（例: 3/1(祝) → 2/28）
-    const candidateMonths = [now.getMonth()];
-    if (isBizNext) candidateMonths.push(now.getMonth() - 1);
-    if (isBizPrev) candidateMonths.push(now.getMonth() + 1);
+  /**
+   * この定義が今日「登録すべき予定日」を返す（対象外なら null）。
+   * 営業日補正で月をまたぐケース（例: 3/1(祝)→2/28、2/末(土)→翌月頭）も候補月で吸収。
+   * 予定日 D が今月内で、今日が D 以降なら D を返す（取りこぼしの当月内追いつき）。
+   */
+  const dueDate_ = (def, now) => {
+    const months = parseMonths_(def.months);
+    const bizAdjust = def.bizAdjust || 'none';
 
-    for (const month of candidateMonths) {
-      let date = new Date(now.getFullYear(), month, day);
-      // 存在しない日（例: 2/30）は月末に補正
-      const expectedMonth = ((month % 12) + 12) % 12;
-      if (date.getMonth() !== expectedMonth) {
-        date = new Date(now.getFullYear(), month + 1, 0);
+    // 候補となる「名目月」（now基準の相対index）。営業日補正の月またぎを考慮。
+    const candidates = [now.getMonth()];
+    if (bizAdjust === 'next') candidates.push(now.getMonth() - 1); // 前月の予定が後営業日で今月に来る
+    if (bizAdjust === 'prev') candidates.push(now.getMonth() + 1); // 翌月の予定が前営業日で今月に来る
+
+    for (const relMonth of candidates) {
+      const base = new Date(now.getFullYear(), relMonth, 1); // -1/12 は自動で年繰り上げ/下げ
+      const y = base.getFullYear();
+      const m0 = base.getMonth();          // 0-11
+      const nominalMonth = m0 + 1;         // 1-12
+
+      if (months && !months.includes(nominalMonth)) continue;
+      if (!isYearDue_(def, y)) continue;
+
+      const ym = `${y}-${pad2_(nominalMonth)}`;
+      if (def.validFrom && ym < def.validFrom) continue;
+      if (def.validTo && ym > def.validTo) continue;
+
+      // 予定日 D（0=月末、存在しない日は月末へ丸め）
+      let D;
+      if (Number(def.day) === 0) {
+        D = new Date(y, m0 + 1, 0);
+      } else {
+        D = new Date(y, m0, Number(def.day));
+        if (D.getMonth() !== m0) D = new Date(y, m0 + 1, 0);
       }
-      if (isBizPrev) date = DateUtils.getBizDatePrev(date);
-      if (isBizNext) date = DateUtils.getBizDateNext(date);
+      if (bizAdjust === 'prev') D = DateUtils.getBizDatePrev(D);
+      else if (bizAdjust === 'next') D = DateUtils.getBizDateNext(D);
 
-      if (date.getFullYear() === now.getFullYear()
-        && date.getMonth() === now.getMonth()
-        && date.getDate() === now.getDate()) {
-        return true;
+      // 今日が予定日 D、または D の CATCHUP_DAYS 日後まで（同月内）なら登録対象。
+      // 冪等化（発生月タグ）と併せ、トリガー落ちを数日内で1回だけ追いつく。
+      // ym は「発生月」＝出所タグ FIXED_COST_YM に刻む（予定日Dの暦月ではなく名目月）。
+      if (D.getFullYear() === now.getFullYear()
+        && D.getMonth() === now.getMonth()) {
+        const diff = now.getDate() - D.getDate();
+        if (diff >= 0 && diff <= CATCHUP_DAYS) return { date: D, ym: ym };
       }
     }
-    return false;
-  }
+    return null;
+  };
 
   return {
     regist: () => {
-      const datas = getData();
-      if (!datas) {
-        Logger.log('登録データがありません。');
+      const defs = MoneyApi.getFixedCosts();
+      if (!defs || !defs.length) {
+        Logger.log('固定費定義がありません。');
         return;
       }
 
       const now = new Date();
-
       const items = [];
-      for (const data of datas) {
-        // 対象月判定
-        if (!isRegistMonth(data[IDX_COL_MONTH])) {
-          Logger.log(`月対象外: ${data[IDX_COL_TITLE]}`);
+
+      for (const def of defs) {
+        if (!def.enabled) continue;
+
+        const due = dueDate_(def, now);
+        if (!due) {
+          Logger.log(`対象外: ${def.title}`);
           continue;
         }
-        // 対象日判定
-        if (!isRegistDate(data[IDX_COL_DAY], data[IDX_COL_BIZ_PREV], data[IDX_COL_BIZ_NEXT])) {
-          Logger.log(`日対象外: ${data[IDX_COL_TITLE]}`);
+
+        // 冪等化（出所タグ）: この定義がその発生月に既に登録済みなら投げない＝通知の重複も防ぐ。
+        // posted は GET /api/fixed-costs が返す {発生月YM: 登録日}。money 側も (id, ym) 重複を弾く（多重防御）。
+        if (def.posted && def.posted[due.ym]) {
+          Logger.log(`既登録につきスキップ: ${def.title} ${due.ym}`);
           continue;
         }
-        const title = data[IDX_COL_TITLE];
-        const category = data[IDX_COL_CATEGORY];
-        const amount = data[IDX_COL_AMOUNT];
-        const shop = data[IDX_COL_SHOP];
-        const methodPay = data[IDX_COL_METHOD_PAY];
-        const note = data[IDX_COL_NOTE];
-        const expenseRatio = data[IDX_COL_EXPENSE_RATIO];
-        let res;
-        switch (data[IDX_COL_TYPE]) {
+
+        let uuid;
+        switch (def.type) {
           case '収入':
-            res = MoneyApi.registerIncome({ name: title, date: now, amount });
+            uuid = MoneyApi.registerIncome({
+              name: def.title, date: due.date, amount: def.amount,
+              fixedCostId: def.id, fixedCostYm: due.ym,
+            });
             break;
           case '支出':
-            res = MoneyApi.registerSpending({
-              name: title, date: now, category, amount, shop, methodPay, note, expenseRatio,
+            uuid = MoneyApi.registerSpending({
+              name: def.title, date: due.date, amount: def.amount,
+              category: def.category, payee: def.payee, methodPay: def.methodPay,
+              note: def.note, expenseRatio: def.expenseRatio,
+              fixedCostId: def.id, fixedCostYm: due.ym,
             });
             break;
           default:
             continue;
         }
-        if (res) {
-          items.push({ title, amount });
+
+        if (uuid) {
+          items.push({ title: def.title, amount: def.amount });
         }
       }
 
