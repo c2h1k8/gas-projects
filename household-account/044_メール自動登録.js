@@ -109,7 +109,11 @@ const MainProcMailAI = (() => {
      * メール本文を解析し、家計簿データを自動登録します。
      */
     create: () => {
-      const payeeList = SpreadsheetApp.getActiveSpreadsheet().getRangeByName('お店').getValues().flat();
+      // 支払先の名前付き範囲名はマスタ見出しセルの値（改称され得る）から導出する
+      const masterSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(Constants.SHEET_MASTER.NAME);
+      const payeeRangeName = masterSheet.getRange(Constants.SHEET_MASTER.ROW.HEADER, Constants.SHEET_MASTER.COL.PAYEE).getValue();
+      const payeeRange = SpreadsheetApp.getActiveSpreadsheet().getRangeByName(payeeRangeName);
+      const payeeList = payeeRange ? payeeRange.getValues().flat().filter(String) : [];
       const settings = Props.getJson(PKeys.AUTO_REGIST_SETTING_LIST);
       
       const msgList = { SUCCESS: [], FAIL: [], SKIP: [] };
