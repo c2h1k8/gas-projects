@@ -75,7 +75,7 @@ const MainProcMailAI = (() => {
 
     for (const item of result.items ?? []) {
       const date = item.date ? new Date(item.date) : message.getDate();
-      const payeeData = getPayeeData(item.payee);
+      const payeeData = getPayeeData(item.payee ?? item.shop);
       const amount = item.amount ?? 0;
 
       const res = CONFIG.DEBUG ? true : MoneyApi.registerSpending({
