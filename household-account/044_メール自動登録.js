@@ -75,7 +75,7 @@ const MainProcMailAI = (() => {
 
     for (const item of result.items ?? []) {
       const date = item.date ? new Date(item.date) : message.getDate();
-      const payeeData = getPayeeData(item.payee);
+      const payeeData = getPayeeData(item.payee ?? item.shop);
       const amount = item.amount ?? 0;
 
       const res = CONFIG.DEBUG ? true : MoneyApi.registerSpending({
@@ -109,11 +109,8 @@ const MainProcMailAI = (() => {
      * メール本文を解析し、家計簿データを自動登録します。
      */
     create: () => {
-      // 支払先の名前付き範囲名はマスタ見出しセルの値（改称され得る）から導出する
-      const masterSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(Constants.SHEET_MASTER.NAME);
-      const payeeRangeName = masterSheet.getRange(Constants.SHEET_MASTER.ROW.HEADER, Constants.SHEET_MASTER.COL.PAYEE).getValue();
-      const payeeRange = SpreadsheetApp.getActiveSpreadsheet().getRangeByName(payeeRangeName);
-      const payeeList = payeeRange ? payeeRange.getValues().flat().filter(String) : [];
+      // 支払先候補は money API のマスタから取得（スプレッドシートの名前付き範囲に依存しない）
+      const payeeList = (MoneyApi.getMasters().payees ?? []).filter(String);
       const settings = Props.getJson(PKeys.AUTO_REGIST_SETTING_LIST);
       
       const msgList = { SUCCESS: [], FAIL: [], SKIP: [] };
