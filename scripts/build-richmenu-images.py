@@ -31,40 +31,51 @@ G = {
     'gray':   ('#B3B7BF', '#9AA0AB'),
 }
 
-CAL = ('<rect x="3.5" y="5" width="17" height="15" rx="2.5" stroke="#fff" stroke-width="2" fill="none"/>'
-       '<path d="M3.5 9.6h17" stroke="#fff" stroke-width="2"/>'
-       '<path d="M8 3v4M16 3v4" stroke="#fff" stroke-width="2" stroke-linecap="round"/>')
+# 旧アイコンに合わせた塗り（ソリッド）系のグリフ。viewBox 24。
+# 中抜きは fill-rule="evenodd" の副パスで表現する（アイコン背景のグラデーションが透ける）。
+RING = ('M12 2.6a9.4 9.4 0 1 0 0 18.8 9.4 9.4 0 0 0 0-18.8z'
+        'm0 3.1a6.3 6.3 0 1 1 0 12.6 6.3 6.3 0 0 1 0-12.6z')
+
+def _cal(inner=''):
+    """カレンダーの土台（上部は帯、下部は中抜き）＋中身"""
+    return ('<rect x="6.5" y="2" width="3" height="4.6" rx="1.5"/>'
+            '<rect x="14.5" y="2" width="3" height="4.6" rx="1.5"/>'
+            '<path fill-rule="evenodd" d="M3.6 4.3h16.8a1.6 1.6 0 0 1 1.6 1.6v14.5a1.6 1.6 0 0 1-1.6 1.6'
+            'H3.6A1.6 1.6 0 0 1 2 20.4V5.9a1.6 1.6 0 0 1 1.6-1.6zm1.7 8.3v7v0h13.4v-7z"/>' + inner)
 
 ICON = {
-    'play':   '<path d="M8.5 5.5v13l11-6.5z" fill="#fff"/>',
-    'stop':   '<rect x="8" y="8" width="8" height="8" rx="2.2" fill="#fff"/>',
-    'umbrella': ('<path d="M12 3.2a8.4 8.4 0 0 1 8.4 8.4H3.6A8.4 8.4 0 0 1 12 3.2z" fill="#fff"/>'
-                 '<path d="M12 11.6v6.2a2.4 2.4 0 0 0 4.8 0" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>'),
-    'calendar': CAL,
-    'calendar_x': CAL + '<path d="M9.6 13.2l4.8 4.2M14.4 13.2l-4.8 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/>',
-    'calendar_plus': CAL + '<path d="M12 12.4v5.2M9.4 15h5.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/>',
-    'calendar_week': CAL + '<rect x="6.2" y="12.4" width="11.6" height="3.6" rx="1.3" fill="#fff"/>',
-    'trash':  '<path d="M6 7h12M9.6 7V5.4h4.8V7M7.6 7l.85 12.6h7.1L16.4 7" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
-    'clock':  ('<circle cx="12" cy="12" r="8.6" stroke="#fff" stroke-width="2" fill="none"/>'
-               '<path d="M12 6.9v5.4l3.5 2.1" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'),
-    'bars':   ('<rect x="4.4" y="13" width="3.6" height="7" rx="1.1" fill="#fff"/>'
-               '<rect x="10.2" y="8" width="3.6" height="12" rx="1.1" fill="#fff"/>'
-               '<rect x="16" y="4.4" width="3.6" height="15.6" rx="1.1" fill="#fff"/>'),
-    'alert':  ('<circle cx="12" cy="12" r="8.7" stroke="#fff" stroke-width="2" fill="none"/>'
-               '<path d="M12 7.3v5.5" stroke="#fff" stroke-width="2.3" stroke-linecap="round"/>'
-               '<circle cx="12" cy="16.5" r="1.35" fill="#fff"/>'),
-    'send':   '<path d="M20.6 3.8 3.2 11.1l6.9 2.7 2.6 6.9z" fill="#fff"/>',
-    'question': ('<circle cx="12" cy="12" r="8.7" stroke="#fff" stroke-width="2" fill="none"/>'
-                 '<path d="M9.5 9.5a2.6 2.6 0 1 1 3.2 3v1.4" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>'
-                 '<circle cx="12.35" cy="17" r="1.25" fill="#fff"/>'),
-    'trend':  ('<path d="M4 16.6 9.6 11l3.4 3.4L20 7.4" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
-               '<path d="M15 7.4h5v5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'),
-    'doc_check': ('<path d="M6.2 3.6h7.3l5 5v11.8H6.2z" stroke="#fff" stroke-width="2" fill="none" stroke-linejoin="round"/>'
-                  '<path d="M9.1 13.6l2.3 2.3 4.1-4.3" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'),
-    'open':   ('<path d="M13.8 4.4h5.8v5.8" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
-               '<path d="M19.6 4.4 11.2 12.8" stroke="#fff" stroke-width="2" stroke-linecap="round"/>'
-               '<path d="M16.8 14v4.4a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 18.4V8.8a1.6 1.6 0 0 1 1.6-1.6H10"'
-               ' stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'),
+    'play': '<path d="M9.8 6.8a1 1 0 0 1 1.5-.87l7.3 4.25a1 1 0 0 1 0 1.74l-7.3 4.25a1 1 0 0 1-1.5-.87z"/>',
+    'stop': '<rect x="7.9" y="7.9" width="8.2" height="8.2" rx="2.4"/>',
+    'umbrella': ('<path d="M12 2.1c-5.6 0-10.1 4.4-10.1 9.8h20.2c0-5.4-4.5-9.8-10.1-9.8z"/>'
+                 '<path d="M11.05 11.9h1.9v5.9a1.55 1.55 0 0 0 3.1 0v-.6h1.9v.6a3.45 3.45 0 0 1-6.9 0z"/>'),
+    'calendar': _cal(),
+    'calendar_x': _cal('<path d="M9.5 13.5l5 4.2M14.5 13.5l-5 4.2" stroke="#fff" stroke-width="2.9" stroke-linecap="round"/>'),
+    'calendar_plus': _cal('<path d="M12 13.2v5M9.5 15.7h5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>'),
+    'calendar_week': _cal('<rect x="6.4" y="13.8" width="11.2" height="4.2" rx="1.5"/>'),
+    'trash': ('<path d="M9.5 2h5a1.2 1.2 0 0 1 1.2 1.2v1.3H8.3V3.2A1.2 1.2 0 0 1 9.5 2z"/>'
+              '<rect x="2.9" y="5.1" width="18.2" height="3.7" rx="1.5"/>'
+              '<path fill-rule="evenodd" d="M5.3 9.6h13.4l-1 11.2A1.4 1.4 0 0 1 16.3 22H7.7a1.4 1.4 0 0 1-1.4-1.2z'
+              'm2.9 2.4v7.8h1.3v-7.8zm3.1 0v7.8h1.3v-7.8zm3.1 0v7.8h1.3v-7.8z"/>'),
+    'clock': (f'<path fill-rule="evenodd" d="{RING}"/>'
+              '<path d="M10.9 6.9h2.2v5.5l3.5 2-1.1 1.9-4.6-2.7z"/>'),
+    'bars': ('<rect x="4.2" y="12.8" width="4" height="7.2" rx="1.3"/>'
+             '<rect x="10" y="7.6" width="4" height="12.4" rx="1.3"/>'
+             '<rect x="15.8" y="4" width="4" height="16" rx="1.3"/>'),
+    'alert': (f'<path fill-rule="evenodd" d="{RING}"/>'
+              '<rect x="10.85" y="7.4" width="2.3" height="6.1" rx="1.15"/>'
+              '<circle cx="12" cy="16.1" r="1.4"/>'),
+    'send': '<path d="M21.8 12 2.9 4.2l3.5 7.8-3.5 7.8z"/>',
+    'question': (f'<path fill-rule="evenodd" d="{RING}"/>'
+                 '<path d="M9.4 9.7a2.7 2.7 0 1 1 3.4 3.1v1.4" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round"/>'
+                 '<circle cx="12.35" cy="17" r="1.4"/>'),
+    'trend': ('<path d="M3.7 17.2 9.7 11.2l3.4 3.4L19.4 8.3" stroke="#fff" stroke-width="3.2" fill="none"'
+              ' stroke-linecap="round" stroke-linejoin="round"/>'
+              '<path d="M14.4 6.6h6.2v6.2z"/>'),
+    'doc_check': ('<path fill-rule="evenodd" d="M5.4 2.4h8.2l5.4 5.4v13.8H5.4zm8.6 1.7v4.1h4.1z'
+                  'm-4.7 9.6-1.6 1.7 3.9 3.8 5.6-6.1-1.7-1.6-3.9 4.3z"/>'),
+    'open': ('<path d="M13.4 2.6h8v8h-3.1V7.9l-6.1 6.1-2.2-2.2 6.1-6.1h-2.7z"/>'
+             '<path d="M3.4 6.4a1.5 1.5 0 0 1 1.5-1.5h5.4v3H6.4v9.6h9.6v-4h3v5.5a1.5 1.5 0 0 1-1.5 1.5H4.9'
+             'a1.5 1.5 0 0 1-1.5-1.5z"/>'),
 }
 
 # 各ページ 6枠: (アイコン, 配色, タイトル, 説明) / None は空き枠
@@ -108,13 +119,13 @@ body{width:1200px;height:810px;background:#F5F7FA;
 .grid{height:678px;display:grid;grid-template-columns:repeat(3,400px);grid-template-rows:339px 339px}
 .cell{padding:24px}
 .card{width:100%;height:100%;background:#fff;border-radius:31px;
-      box-shadow:0 3px 10px rgba(38,50,73,.07);
+      box-shadow:0 7px 34px rgba(38,50,73,.24);
       display:flex;flex-direction:column;align-items:center;padding-top:37px}
 .ico{width:126px;height:126px;border-radius:44px;margin-bottom:49px;
      display:flex;align-items:center;justify-content:center}
 .ico svg{width:64px;height:64px}
-.t{font-size:41px;line-height:1;font-weight:600;color:#2D3442;letter-spacing:.01em}
-.s{font-size:23px;line-height:1;color:#9298A4;margin-top:12px}
+.t{font-size:41px;line-height:1;font-weight:400;color:#2D3442;letter-spacing:.01em}
+.s{font-size:23px;line-height:1;font-weight:500;color:#9298A4;margin-top:12px}
 """
 
 
@@ -134,7 +145,7 @@ def build(page):
             f'<div class="cell"><div class="card">'
             f'<div class="ico" style="background:linear-gradient(180deg,{c1},{c2});'
             f'box-shadow:0 11px 20px -3px {c2}80">'
-            f'<svg viewBox="0 0 24 24">{ICON[icon]}</svg></div>'
+            f'<svg viewBox="0 0 24 24" fill="#fff">{ICON[icon]}</svg></div>'
             f'<div class="t">{title}</div><div class="s">{sub}</div>'
             f'</div></div>')
     return (f'<!doctype html><html lang="ja"><head><meta charset="utf-8">'
