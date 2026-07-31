@@ -229,7 +229,7 @@ const FlexCards = (() => {
     },
 
     /**
-     * 結果カード（勤怠連絡・勤務表提出など）。
+     * 結果カード（勤務表提出など）。
      * @param {{status, title, subtitle}} p  status: 'ok' | 'ng' | 'info'
      */
     result: ({ status, title, subtitle }) => {
@@ -257,46 +257,58 @@ const FlexCards = (() => {
     },
 
     /**
-     * 連絡状況カード（✅連絡済 / ⚠️要連絡＋連絡ボタン）。
-     * @param {{title, subtitle, entries, pendingCount}} p
-     *   entries: [{ label, catLabel, sent, pending, date, cat }]
+     * 未登録一覧カード（日ごとに出社/退社を個別入力するボタン付き）。
+     * ボタンは時刻ピッカーを直接開き、初期値には現在の勤務表の値を使う。
+     * @param {{title, subtitle, note, entries, single}} p
+     *   entries: [{ dateStr, label, start, end, needStart, needEnd }]
+     *   note: 直前の登録結果（省略可）
+     *   single: 1日単位のカード（登録後も同じ1日カードへ戻る）
      */
-    contactStatus: ({ title, subtitle, entries, pendingCount }) => {
-      const GREEN = '#26A65B';
+    unregistered: ({ title, subtitle, note, entries, single }) => {
+      // 未登録の側は強調、登録済みの側は現在時刻をラベルにした控えめな見た目にする
+      const pickerButton = (dateStr, field, label, time, need) => {
+        const data = { action: 'fill-punch', date: dateStr, field };
+        if (single) data.single = 1;
+        const button = {
+          type: 'button', height: 'sm', flex: 1,
+          style: need ? 'primary' : 'secondary',
+          action: {
+            type: 'datetimepicker',
+            label: need ? `${label}を入力` : `${label} ${time}`,
+            data: JSON.stringify(data),
+            mode: 'time',
+            initial: time,
+            min: '00:00',
+            max: '23:59',
+          },
+        };
+        if (need) button.color = BLUE;
+        return button;
+      };
+
       const body = [];
+      if (note) body.push(text(note, { size: 'xs', color: GRAY, align: 'center', wrap: true }));
       if (subtitle) body.push(text(subtitle, { size: 'sm', color: GRAY, align: 'center' }));
       body.push(sep());
-      if (!entries || entries.length === 0) {
-        body.push(text('連絡対象はありません', { size: 'sm', color: GRAY, align: 'center', margin: 'md' }));
-      } else {
-        for (const e of entries) {
-          const ok = e.sent;
-          body.push({
-            type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md', alignItems: 'center',
-            contents: [
-              text(ok ? '✅' : '⚠️', { size: 'sm', flex: 0 }),
-              text(e.label, { size: 'sm', color: DARK, flex: 4 }),
-              text(e.catLabel, { size: 'sm', color: ok ? GRAY : WARN, flex: 3 }),
-              text(ok ? '連絡済' : '要連絡', { size: 'sm', color: ok ? GREEN : WARN, align: 'end', flex: 3 }),
-            ],
-          });
-          if (e.pending) {
-            body.push({
-              type: 'button', style: 'primary', height: 'sm', color: BLUE, margin: 'sm',
-              action: { type: 'postback', label: '連絡する', data: JSON.stringify({ action: 'contact-now', date: e.date, cat: e.cat }) },
-            });
-          }
-        }
-        if (pendingCount >= 2) {
-          body.push(sep());
-          body.push({
-            type: 'button', style: 'secondary', height: 'sm', margin: 'md',
-            action: { type: 'postback', label: `未連絡をまとめて連絡（${pendingCount}件）`, data: JSON.stringify({ action: 'contact-bulk' }) },
-          });
-        }
-      }
-      const headerColor = pendingCount > 0 ? WARN : GREEN;
-      return shell(headerColor, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
+      entries.forEach((e, i) => {
+        const lack = (e.needStart && e.needEnd) ? '出社・退社が未登録'
+          : (e.needStart ? '出社が未登録' : '退社が未登録');
+        body.push({
+          type: 'box', layout: 'horizontal', margin: i > 0 ? 'lg' : 'md', alignItems: 'center',
+          contents: [
+            text(e.label, { size: 'sm', color: DARK, weight: 'bold', flex: 4 }),
+            text(lack, { size: 'xs', color: WARN, align: 'end', flex: 6 }),
+          ],
+        });
+        body.push({
+          type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm',
+          contents: [
+            pickerButton(e.dateStr, 'start', '出社', e.start, e.needStart),
+            pickerButton(e.dateStr, 'end', '退社', e.end, e.needEnd),
+          ],
+        });
+      });
+      return shell(WARN, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
     },
 
     /**
@@ -343,8 +355,8 @@ const FlexCards = (() => {
         sep(),
         section('メニュー（下のタブ）', [
           { k: '勤怠登録', v: '出社・退社・欠勤／カレンダー登録' },
-          { k: '連絡・提出', v: '稼働一覧・推移／欠勤連絡／勤務表提出' },
-          { k: '状況確認', v: '連絡状況・勤怠チェック・提出状況／着地見込み・勤務表を開く・翌月作成' },
+          { k: '稼働・提出', v: '稼働一覧・推移／未登録の登録・勤務表提出' },
+          { k: '状況確認', v: '今週の状況・着地見込み・提出状況／勤務表を開く・翌月作成' },
         ]),
         section('打刻（メッセージ入力）', [
           { k: '1900', v: '退社' },
@@ -356,12 +368,6 @@ const FlexCards = (() => {
           typeLine,
           { k: 'h', v: '有給休暇として当日登録' },
           { k: 'w 1930', v: '休日出勤（退社1930）' },
-        ]),
-        section('勤怠連絡（メール送信）', [
-          { k: '休', v: '本日を欠勤連絡' },
-          { k: '休 20260601', v: '指定日を欠勤連絡' },
-          { k: '休 20260601 20260603 本文', v: '期間＋本文' },
-          { k: '客先休 20260601', v: '客先休業日' },
         ]),
         section('稼働一覧', [
           { k: 'リスト', v: '当月' },

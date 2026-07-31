@@ -22,80 +22,6 @@ const MainProc = (function () {
     w: 'HOLIDAY_WORKING',
     c: 'CLEAR',
   }
-  const ABSENCE_TYPE = {
-    REST: {
-      KEY: 'REST',
-      LABEL: '通常休',
-      SUBJECT: '【欠勤連絡】',
-      USE_PERIOD: true,
-    },
-    WORK_REST: {
-      KEY: 'WORK_REST',
-      LABEL: '客先休',
-      SUBJECT: '【客先休業日/欠勤】',
-      USE_PERIOD: true,
-    },
-    OVER_WORK: {
-      KEY: 'OVER_WORK',
-      LABEL: '深夜作業',
-      SUBJECT: '【深夜作業連絡】',
-      USE_PERIOD: false,
-    },
-    LATE_WORK: {
-      KEY: 'LATE_WORK',
-      LABEL: '遅刻',
-      SUBJECT: '【遅刻連絡】',
-      USE_PERIOD: false,
-    },
-    EARLY_WORK: {
-      KEY: 'EARLY_WORK',
-      LABEL: '早退',
-      SUBJECT: '【早退連絡】',
-      USE_PERIOD: false,
-    },
-    HOLIDAY_WORK: {
-      KEY: 'HOLIDAY_WORK',
-      LABEL: '休出',
-      SUBJECT: '【休日出勤連絡】',
-      USE_PERIOD: true,
-    },
-  }
-
-  // 勤怠連絡カテゴリ（連絡済み判定・連絡漏れ監視で使用）
-  const CONTACT_CATEGORY = {
-    ABSENCE: 'ABSENCE',       // 欠勤系（通常休/客先休/有給/代休）
-    OVER_WORK: 'OVER_WORK',   // 深夜作業
-    HOLIDAY_WORK: 'HOLIDAY_WORK', // 休出
-    LATE_WORK: 'LATE_WORK',   // 遅刻
-    EARLY_WORK: 'EARLY_WORK', // 早退
-  };
-  // 勤怠連絡種別（ABSENCE_TYPEのKEY） → カテゴリ
-  const CONTACT_CATEGORY_BY_TYPE = {
-    REST: CONTACT_CATEGORY.ABSENCE,
-    WORK_REST: CONTACT_CATEGORY.ABSENCE,
-    OVER_WORK: CONTACT_CATEGORY.OVER_WORK,
-    HOLIDAY_WORK: CONTACT_CATEGORY.HOLIDAY_WORK,
-    LATE_WORK: CONTACT_CATEGORY.LATE_WORK,
-    EARLY_WORK: CONTACT_CATEGORY.EARLY_WORK,
-  };
-
-  // カテゴリ → 表示ラベル（連絡状況・漏れ通知で共用）
-  const CONTACT_CATEGORY_LABEL = {
-    [CONTACT_CATEGORY.ABSENCE]: '欠勤',
-    [CONTACT_CATEGORY.HOLIDAY_WORK]: '休出',
-    [CONTACT_CATEGORY.LATE_WORK]: '遅刻',
-    [CONTACT_CATEGORY.EARLY_WORK]: '早退',
-    [CONTACT_CATEGORY.OVER_WORK]: '深夜',
-  };
-  // カテゴリの表示順（連絡状況の並び）
-  const CONTACT_CATEGORY_ORDER = [
-    CONTACT_CATEGORY.ABSENCE,
-    CONTACT_CATEGORY.HOLIDAY_WORK,
-    CONTACT_CATEGORY.LATE_WORK,
-    CONTACT_CATEGORY.EARLY_WORK,
-    CONTACT_CATEGORY.OVER_WORK,
-  ];
-
   // テストモードフラグ（スプレッドシート操作をスキップする）
   let _testMode = false;
 
@@ -132,12 +58,11 @@ const MainProc = (function () {
   };
 
   /**
-   * メール送信先を解決します（テストモード時はデバッグ用アドレス）。
-   * @param pkey 送信先アドレスのプロパティキー（JSON配列で保持）
+   * 勤務表の送信先を解決します（テストモード時はデバッグ用アドレス）。
    */
-  const resolveRecipients = (pkey) => _testMode
+  const resolveRecipients = () => _testMode
     ? [Props.getValue(PKeys.DEBUG_EMAIL)]
-    : JSON.parse(Props.getValue(pkey));
+    : JSON.parse(Props.getValue(PKeys.ADDRESS_TO));
 
   /**
    * 日時から時刻を取得します。
@@ -162,35 +87,11 @@ const MainProc = (function () {
    * @return 時間
    */
   const convertMinutes2Hour = (minutes) => {
-    const h = Math.trunc(minutes / 60);
-    const m = minutes % 60;
-    return `${h}:${String(m).padStart(2, "0")}`;
+    // 残業が所定に満たない場合はマイナスになるため、符号を分けてから桁を整える
+    const sign = minutes < 0 ? '-' : '';
+    const abs = Math.abs(minutes);
+    return `${sign}${Math.trunc(abs / 60)}:${String(abs % 60).padStart(2, "0")}`;
   }
-
-  // ===== 遅刻/早退/深夜の判定（勤務表の工数計算と同じ丸め基準） =====
-  // 工数は ROUND_UNIT_CALC 単位で「開始=切り上げ／終了=切り捨て」して計算されるため、
-  // 遅刻/早退/深夜もその丸め後の実働時刻で判定する。
-
-  const hasTime = (t) => t && t !== '-';
-  const calcUnit = () => Math.abs(Number(Props.getValue(PKeys.ROUND_UNIT_CALC)) || 0);
-  /** 出社時刻を切り上げた実働開始（分） */
-  const effStartMin = (start) => {
-    const unit = calcUnit();
-    const m = convertHour2Minutes(start);
-    return unit > 0 ? Math.ceil(m / unit) * unit : m;
-  };
-  /** 退社時刻を切り捨てた実働終了（分） */
-  const effEndMin = (end) => {
-    const unit = calcUnit();
-    const m = convertHour2Minutes(end);
-    return unit > 0 ? Math.floor(m / unit) * unit : m;
-  };
-  /** 実働開始がデフォルト出社時刻より遅い（＝遅刻） */
-  const isLateStart = (start) => hasTime(start) && effStartMin(start) > convertHour2Minutes(Props.getValue(PKeys.START_TIME_DEFAULT));
-  /** 実働終了がデフォルト退社時刻より早い（＝早退） */
-  const isEarlyEnd = (end) => hasTime(end) && effEndMin(end) < convertHour2Minutes(Props.getValue(PKeys.END_TIME_DEFAULT));
-  /** 実働終了が22時以降（＝深夜作業） */
-  const isOverWorkEnd = (end) => hasTime(end) && effEndMin(end) >= 22 * 60;
 
   // ===== 履歴の保持管理 =====
 
@@ -253,79 +154,33 @@ const MainProc = (function () {
     }
   };
 
-  // ===== 勤怠連絡の送信履歴（SENT_CONTACTS） =====
-
-  const getSentContacts = () => Props.getJson(PKeys.SENT_CONTACTS) || new Map();
+  // ===== 提出済み月の編集ロック =====
 
   /**
-   * 指定日が該当カテゴリで連絡済みかを判定します。
-   * @param dateStr 'yyyy-MM-dd'
-   * @param category 連絡カテゴリ
+   * 対象日の月が提出済みかを判定します。
+   * LAST_SUBMIT_TIMESHEETは 'yyyy年MM月'（月はゼロ埋め）のため、文字列比較で新旧を比べられる。
+   * 提出済み月とそれより古い月をまとめて対象にする。
+   * @param date 対象日
    */
-  const isContacted = (dateStr, category) => {
-    const arr = getSentContacts().get(dateStr);
-    return Array.isArray(arr) && arr.includes(category);
+  const isSubmittedMonth = (date) => {
+    const last = Props.getValue(PKeys.LAST_SUBMIT_TIMESHEET);
+    return !!last && DateUtils.formatDate(date, 'yyyy年MM月') <= last;
   };
 
   /**
-   * 勤怠連絡の送信を記録します。
-   * @param dateStrList 'yyyy-MM-dd'の配列
-   * @param category 連絡カテゴリ
+   * 提出済み月なら編集不可のカードを返します。
+   * @param replyToken リプライトークン
+   * @param date 対象日
+   * @return ロックしたらtrue（呼び出し側は処理を中断する）
    */
-  const recordContacts = (dateStrList, category) => {
-    if (_testMode) return;
-    const contacts = getSentContacts();
-    pruneOldEntries(contacts);
-    for (const dateStr of dateStrList) {
-      const arr = contacts.get(dateStr) || [];
-      if (!arr.includes(category)) arr.push(category);
-      contacts.set(dateStr, arr);
-    }
-    Props.setJson(PKeys.SENT_CONTACTS, contacts);
-  };
-
-  /**
-   * 登録内容から必要な勤怠連絡カテゴリの配列を返します。
-   * @param type 勤怠区分（更新後）
-   * @param start 出社時刻（'HH:mm' / '-' / ''）
-   * @param end 退社時刻（'HH:mm' / '-' / ''）
-   * @param startProvided 今回のLINE登録で出社を入力したか
-   * @param endProvided 今回のLINE登録で退社を入力したか
-   */
-  const neededContactCategories = (type, start, end, startProvided, endProvided) => {
-    switch (type) {
-      case TYPE.REST:
-      case TYPE.HOLIDAY:
-      case TYPE.DAIKYU:
-        return [CONTACT_CATEGORY.ABSENCE];
-      case TYPE.HOLIDAY_WORKING: {
-        const cats = [CONTACT_CATEGORY.HOLIDAY_WORK];
-        if (endProvided && isOverWorkEnd(end)) cats.push(CONTACT_CATEGORY.OVER_WORK);
-        return cats;
-      }
-      case TYPE.WORKING: {
-        const cats = [];
-        if (startProvided && isLateStart(start)) cats.push(CONTACT_CATEGORY.LATE_WORK);
-        if (endProvided && isOverWorkEnd(end)) cats.push(CONTACT_CATEGORY.OVER_WORK);
-        if (endProvided && isEarlyEnd(end)) cats.push(CONTACT_CATEGORY.EARLY_WORK);
-        return cats;
-      }
-      default:
-        return [];
-    }
-  };
-
-  /**
-   * 開始日〜終了日の'yyyy-MM-dd'配列を返します（終了日省略時は開始日のみ）。
-   */
-  const buildDateRange = (fromStr, toStr) => {
-    const from = Utilities.parseDate(fromStr, 'JST', 'yyyy-MM-dd');
-    const to = toStr ? Utilities.parseDate(toStr, 'JST', 'yyyy-MM-dd') : from;
-    const out = [];
-    for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
-      out.push(DateUtils.formatDate(d, 'yyyy-MM-dd'));
-    }
-    return out;
+  const replySubmittedLock_ = (replyToken, date) => {
+    if (!isSubmittedMonth(date)) return false;
+    LineManager.replyFlex(replyToken, '提出済み', FlexCards.result({
+      status: 'ng',
+      title: '提出済みのため登録できません',
+      subtitle: `${DateUtils.formatDate(date, 'yyyy年M月')}分は提出済みです`,
+    }));
+    return true;
   };
 
   /**
@@ -348,13 +203,13 @@ const MainProc = (function () {
       // 差分月指定がある場合、指定月分減算する。
       date = new Date(date.getFullYear(), date.getMonth() - Number(diffMonths) + 1, 0);
     }
-    // ファイル取得
-    const ssFile = getFile(date);
-    if (!ssFile) {
+    // 勤務表取得
+    const sheet = getMainSheet(date);
+    if (!sheet) {
       postErrMsgFileNotFound(replyToken, date);
       return;
     }
-    const { totalTime, workDays, diffTotal, rows, dayCounts } = calculateTotalTime(ssFile, date);
+    const { totalTime, workDays, diffTotal, rows, dayCounts } = calculateTotalTime(sheet, date);
     const summary = summaryData(totalTime, workDays, diffTotal, diffMonths === '');
     // 日数サマリー（稼働は常時表示／その他は0件は非表示。数字を種別色で表示）
     const dayItems = [{ label: '稼働', count: workDays, type: TYPE.WORKING }];
@@ -379,8 +234,7 @@ const MainProc = (function () {
    * @return {{ total, overtime, forecast }} forecastはnull可
    */
   const getMonthSummaryData = (date) => {
-    const ssFile = getFile(date);
-    const { totalTime, workDays, diffTotal } = calculateTotalTime(ssFile, date);
+    const { totalTime, workDays, diffTotal } = calculateTotalTime(getMainSheet(date), date);
     // 最終営業日ではない場合、見込み時間を出す
     const lastBizDate = DateUtils.getBizDatePrev(new Date(date.getFullYear(), date.getMonth() + 1, 1), false);
     const showForecast = date.getDate() < lastBizDate.getDate();
@@ -403,13 +257,17 @@ const MainProc = (function () {
   };
 
   /**
-   * 勤務表ファイルのメインシートを取得します。
-   * @param ssFile スプレッドシートファイル
+   * 勤務表のメインシートを取得します（IDから直接開くためDrive APIを経由しない）。
+   * @param date 日付
+   * @return シート / 勤務表が無ければnull
    */
-  const getMainSheet = (ssFile) => SpreadsheetApp.openById(ssFile.getId()).getSheetByName(Props.getValue(PKeys.SHEET_NAME_MAIN));
+  const getMainSheet = (date) => {
+    const id = getFileId(date);
+    if (!id) return null;
+    return SpreadsheetApp.openById(id).getSheetByName(Props.getValue(PKeys.SHEET_NAME_MAIN));
+  };
 
-  const calculateTotalTime = (ssFile, date) => {
-    const sheet = getMainSheet(ssFile);
+  const calculateTotalTime = (sheet, date) => {
     const values = sheet.getRange(13, COLUMN_META.DAY.NO, date.getDate(), COLUMN_META.DIFF.NO).getValues();
 
     let workDays = 0;
@@ -479,9 +337,8 @@ const MainProc = (function () {
    * @param toDate 集計終了日（23:59:59）
    */
   const computeRangeTotals = (anchorDate, fromDate, toDate) => {
-    const ssFile = getFile(anchorDate);
-    if (!ssFile) return null;
-    const sheet = getMainSheet(ssFile);
+    const sheet = getMainSheet(anchorDate);
+    if (!sheet) return null;
     const values = sheet.getRange(13, COLUMN_META.DAY.NO, anchorDate.getDate(), COLUMN_META.DIFF.NO).getValues();
     let workDays = 0;
     let diffTotal = 0;
@@ -652,26 +509,51 @@ const MainProc = (function () {
   };
 
   /**
+   * fromDateの翌日からtoDateまでの営業日数を数えます。
+   * @param fromDate 起点（この日は含まない）
+   * @param toDate 終点（この日を含む）
+   */
+  const countBizDaysAfter_ = (fromDate, toDate) => {
+    let count = 0;
+    const d = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate() + 1);
+    for (; d <= toDate; d.setDate(d.getDate() + 1)) {
+      if (DateUtils.isBizDate(d)) count++;
+    }
+    return count;
+  };
+
+  /**
    * 指定週（月〜金）の週次サマリー表示内容を組み立てます。
    * @param anchorDate 対象週に含まれる任意の日
+   * @param throughDate 集計の打ち切り日（週の途中で参照する場合に指定）。
+   *   未来日は勤務表に既定値が入っており稼働として数えてしまうため、当日までに絞る。
    * @return { subtitle, metrics, note, signature } / 勤務表が無ければnull
    */
-  const buildWeeklySummary_ = (anchorDate) => {
+  const buildWeeklySummary_ = (anchorDate, throughDate = null) => {
     const from = startOfWeekMon(anchorDate);
     const fri = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 4);
-    const to = new Date(fri.getFullYear(), fri.getMonth(), fri.getDate(), 23, 59, 59);
-    const week = computeRangeTotals(fri, from, to);
+    const last = (throughDate && throughDate < fri) ? throughDate : fri;
+    const to = new Date(last.getFullYear(), last.getMonth(), last.getDate(), 23, 59, 59);
+    const week = computeRangeTotals(last, from, to);
     if (!week) return null;
-    const month = getMonthSummaryData(fri);
+    const month = getMonthSummaryData(last);
+    // メトリクスは今週の指標で揃え、当月の値は注記に回す（横並びは3つまでが収まりの上限）
     const metrics = [
       { label: '今週稼働', value: convertMinutes2Hour(week.total) },
       { label: '今週残業', value: convertMinutes2Hour(week.overtime), accent: true },
-      { label: '当月累計', value: month.total },
     ];
+    // 残りの営業日を所定労働で埋めた場合の週の着地見込み（週が終わっていれば出さない）
+    const remainingBizDays = countBizDaysAfter_(last, fri);
+    if (remainingBizDays > 0) {
+      metrics.push({
+        label: '今週見込み',
+        value: convertMinutes2Hour(week.total + remainingBizDays * STD_WORK_MIN),
+      });
+    }
     const note = month.forecast
-      ? `当月着地見込み ${month.forecast} ／ 残業 ${month.overtime}`
-      : `当月残業 ${month.overtime}`;
-    const subtitle = `${DateUtils.formatDate(from, 'M/d')}〜${DateUtils.formatDate(fri, 'M/d')}`;
+      ? `当月 ${month.total} ／ 着地見込み ${month.forecast} ／ 残業 ${month.overtime}`
+      : `当月 ${month.total} ／ 残業 ${month.overtime}`;
+    const subtitle = `${DateUtils.formatDate(from, 'M/d')}〜${DateUtils.formatDate(last, 'M/d')}`;
     // 再送要否の判定に使う表示内容のシグネチャ（内容が変われば再送）
     const signature = `${subtitle}|${JSON.stringify(metrics)}|${note}`;
     return { subtitle, metrics, note, signature };
@@ -706,6 +588,27 @@ const MainProc = (function () {
    * 週次サマリーを当日基準でLINEへプッシュします（手動テスト用）。
    */
   const notifyWeeklySummary = () => sendWeeklySummary(new Date());
+
+  /**
+   * 今週の稼働・残業・当月累計を表示します（メニューからのオンデマンド）。
+   * 週の途中でも見られるよう、集計は当日までで打ち切る。
+   * @param replyToken リプライトークン
+   */
+  const displayWeeklySummary = (replyToken) => {
+    const now = new Date();
+    const data = buildWeeklySummary_(now, now);
+    if (!data) {
+      postErrMsgFileNotFound(replyToken, now);
+      return;
+    }
+    const title = '今週の状況';
+    LineManager.replyFlex(replyToken, title, FlexCards.summary({
+      title,
+      subtitle: data.subtitle,
+      metrics: data.metrics,
+      note: data.note,
+    }));
+  };
 
   // ===== 週完了時の週次サマリー自動送信 =====
 
@@ -771,7 +674,7 @@ const MainProc = (function () {
    */
   const notifyMidMonthSummary = () => {
     const now = new Date();
-    if (!getFile(now)) return;
+    if (!getFileId(now)) return;
     const month = getMonthSummaryData(now);
     const metrics = [
       { label: '当月累計', value: month.total },
@@ -806,65 +709,6 @@ const MainProc = (function () {
     const subtitle = `${DateUtils.formatDate(prevLast, 'yyyy年M月')}分`;
     notifyFlex(title, FlexCards.summary({ title, subtitle, metrics }), `${subtitle} / ${JSON.stringify(metrics)}`);
   };
-
-  /**
-   * 期間入力可否を送信します。
-   * @param replyToken リプライトークン
-   * @param data データ
-   * @param mode カレンダーモード
-   * @param initial 初期値
-   */
-  const postPeriodSelect = (replyToken, data, mode, initial = '') => {
-    let min = '';
-    let max = '';
-    switch (mode) {
-      case 'time':
-        min = '00:00';
-        max = '23:59';
-        break;
-      case 'date':
-        min = data.from;
-        break;
-    }
-    const acitons = [];
-    acitons.push(LineUtil.makeQuickReply({
-      'type': 'datetimepicker',
-      'label': 'はい',
-      'text': 'はい',
-      'data': JSON.stringify(data),
-      'mode': mode,
-      'initial': initial,
-      'min': min,
-      'max': max,
-    }));
-    acitons.push(LineUtil.makeQuickReply({
-      'type': 'postback',
-      'label': 'いいえ',
-      'text': 'いいえ',
-      'data': JSON.stringify(data),
-    }));
-    LineManager.replyQuick(replyToken, '期間入力を行いますか？', acitons);
-  }
-
-  /**
-   * 勤怠連絡種別選択を通知します。
-   * @param replyToken リプライトークン
-   * @param data データ
-   */
-  const postAbsenceTypeSelect = (replyToken, data) => {
-    const acitons = [];
-    for (const key in ABSENCE_TYPE) {
-      data.type = key;
-      const label = ABSENCE_TYPE[key].LABEL;
-      acitons.push(LineUtil.makeQuickReply({
-        'type': 'postback',
-        'label': label,
-        'text': label,
-        'data': JSON.stringify(data),
-      }));
-    }
-    LineManager.replyQuick(replyToken, '連絡種別を教えて下さい。', acitons);
-  }
 
   /**
    * 文字列から勤怠情報を取得します。
@@ -1028,17 +872,20 @@ const MainProc = (function () {
    * @param type 勤怠区分
    * @param start 出社時間
    * @param end 退社時間
+   * @param reply 打刻カードを返信するか（呼び出し側で別のカードを返す場合はfalse）
+   * @return { kosu } 更新成功（kosuは退社確定時のみ）／中断した場合はnull
    */
-  const updateTime = (replyToken, {date, type, start, end }) => {
+  const updateTime = (replyToken, {date, type, start, end }, { reply = true } = {}) => {
+    // 提出済み月は編集不可（全ての登録経路がここを通る）
+    if (replySubmittedLock_(replyToken, date)) return null;
     // LINEからの開始登録有無（シート反映前に判定）
     const startProvided = start !== '-';
-    // ファイル取得
-    const ssFile = getFile(date)
-    if (!ssFile) {
+    // 勤務表取得
+    const sheet = getMainSheet(date);
+    if (!sheet) {
       postErrMsgFileNotFound(replyToken, date);
-      return;
+      return null;
     }
-    const sheet = getMainSheet(ssFile);
     switch (type) {
       case TYPE.DAIKYU:
       case TYPE.HOLIDAY:
@@ -1065,15 +912,13 @@ const MainProc = (function () {
         break;
     }
     const rowNo = date.getDate() + 12;
-    // 未設定の場合、既存の値で取得する。
-    if (start === '-') {
-      // 開始時刻を更新しない場合、既存値を取得
-      start = getTime(sheet.getRange(rowNo, COLUMN_META.START.NO).getValue());
-    }
     const shouldUpdEnd = end !== '-';
-    if (!shouldUpdEnd) {
-      // 終了時刻を更新しない場合、既存値を取得
-      end = getTime(sheet.getRange(rowNo, COLUMN_META.END.NO).getValue());
+    // 更新しない時刻は既存値を引き継ぐ。出社〜退社の列は連続しているため1回の読み取りで済ませる。
+    if (start === '-' || !shouldUpdEnd) {
+      const width = COLUMN_META.END.NO - COLUMN_META.START.NO + 1;
+      const cols = sheet.getRange(rowNo, COLUMN_META.START.NO, 1, width).getValues()[0];
+      if (start === '-') start = getTime(cols[0]);
+      if (!shouldUpdEnd) end = getTime(cols[width - 1]);
     }
     if (_testMode) {
       Logger.log(`[TEST] updateTime: row=${rowNo}, type=${type}, start=${start}, end=${end}`);
@@ -1082,18 +927,23 @@ const MainProc = (function () {
       sheet.getRange(rowNo, COLUMN_META.START.NO).setValue(start);
       sheet.getRange(rowNo, COLUMN_META.END.NO).setValue(end);
     }
-    const diff = getTime(sheet.getRange(rowNo, COLUMN_META.DIFF.NO).getValue());
-    const isWorking = (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING);
     const cardType = type || TYPE.CLEAR;
-    const card = FlexCards.punch({
-      dateLabel: DateUtils.formatDate(date, 'M/d(aaa)'),
-      type: cardType,
-      start: isWorking ? start : '',
-      end: (isWorking && shouldUpdEnd) ? end : '',
-      kosu: (isWorking && shouldUpdEnd) ? convertMinutes2Hour(convertHour2Minutes(diff)) : '',
-      summary: shouldUpdEnd ? getMonthSummaryData(date) : null,
-    });
-    LineManager.replyFlex(replyToken, `${cardType} 登録`, card);
+    const isWorking = (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING);
+    // 退社まで入った稼働日のみ工数が確定する
+    const kosu = (isWorking && shouldUpdEnd)
+      ? convertMinutes2Hour(convertHour2Minutes(getTime(sheet.getRange(rowNo, COLUMN_META.DIFF.NO).getValue())))
+      : '';
+    if (reply) {
+      const card = FlexCards.punch({
+        dateLabel: DateUtils.formatDate(date, 'M/d(aaa)'),
+        type: cardType,
+        start: isWorking ? start : '',
+        end: (isWorking && shouldUpdEnd) ? end : '',
+        kosu,
+        summary: shouldUpdEnd ? getMonthSummaryData(date) : null,
+      });
+      LineManager.replyFlex(replyToken, `${cardType} 登録`, card);
+    }
 
     // 勤怠のLINE登録履歴を記録（連絡漏れ監視・週完了判定で使用）
     if (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING) {
@@ -1104,20 +954,9 @@ const MainProc = (function () {
       clearPunch(date);
     }
 
-    // 必要な勤怠連絡のうち未連絡のものがあれば催促（連絡済みは抑止）
-    const dateStr = DateUtils.formatDate(date, 'yyyy-MM-dd');
-    const needed = neededContactCategories(type, start, end, startProvided, shouldUpdEnd);
-    const pending = needed.filter((c) => !isContacted(dateStr, c));
-    if (pending.length) {
-      executeContactWork('', {
-        action: 'absence-mail',
-      }, {
-        date: dateStr,
-      });
-    }
-
     // その週（月〜金）の勤怠がすべて登録され切ったら、週次サマリーを自動送信（週1回）
     maybeNotifyWeeklyComplete(date);
+    return { kosu };
   }
 
   /**
@@ -1155,38 +994,20 @@ const MainProc = (function () {
    * @param params カレンダーにて指定した値
    */
   const executeRegistCalendar = (replyToken, data, params) => {
-    const workInfo = {
-      'type': data.type,
-      'start': '-',
-      'end': '-',
+    if (!params || !params.date) return;
+    if (data.type === TYPE.WORKING) {
+      // 出勤は日付確定後、その日の出社/退社を個別に入力するカードを返す
+      // （日付が決まってから時刻を聞くため、既存の時刻を入力の初期値にできる）
+      displayDayPunch(replyToken, params.date);
+      return;
     }
-    switch (data.type) {
-      case TYPE.REST:
-      case TYPE.CLEAR:
-        // 欠勤、クリアの場合
-        workInfo.date = Utilities.parseDate(params.date, 'JST', "yyyy-MM-dd");
-        break;
-      case TYPE.WORKING:
-        // 出勤の場合
-        if (!params) {
-          // 期間入力「いいえ」の場合
-          workInfo.date = Utilities.parseDate(data.from, 'JST', "yyyy-MM-dd'T'HH:mm");
-          workInfo.start = getTime(workInfo.date);
-        } else if (params.time) {
-          // 日時入力（To入力後）の場合
-          workInfo.date = Utilities.parseDate(data.from, 'JST', "yyyy-MM-dd'T'HH:mm");
-          workInfo.start = getTime(workInfo.date);
-          workInfo.end = params.time;
-        } else if (params.datetime) {
-          // 日時入力（From入力後）の場合、期間指定確認を行う。
-          data.from = params.datetime;
-          postPeriodSelect(replyToken, data, 'time', Props.getValue(PKeys.END_TIME_DEFAULT));
-          return;
-        }
-        break;
-    }
-    // 勤務表更新
-    updateTime(replyToken, workInfo);
+    // 欠勤・クリアは区分のみなのでそのまま更新
+    updateTime(replyToken, {
+      type: data.type,
+      date: Utilities.parseDate(params.date, 'JST', 'yyyy-MM-dd'),
+      start: '-',
+      end: '-',
+    });
   }
 
   /**
@@ -1298,319 +1119,9 @@ const MainProc = (function () {
       `${lastName}`,
     ].join('\n');
 
-    const toAddresses = resolveRecipients(PKeys.ADDRESS_TO);
+    const toAddresses = resolveRecipients();
     return GoogleApi.sendEmail(toAddresses, subject, body + buildSignature_(), getMailConfig_(), blob);
   };
-
-  /**
-   * テキスト形式の勤怠連絡を行います。
-   * 入力形式: [休|客先休] yyyymmdd [yyyymmdd] [本文]
-   * @param replyToken リプライトークン
-   * @param parts 入力テキストをスペース分割した配列
-   */
-  const sendMailRest = (replyToken, parts) => {
-    const typeMap = { '休': 'REST', '客先休': 'WORK_REST' };
-    const type = typeMap[parts[0]];
-    if (!type) {
-      LineManager.replyFlex(replyToken, '連絡種別が不正', FlexCards.result({ status: 'ng', title: '連絡種別が不正です', subtitle: '例) 休 / 客先休' }));
-      return;
-    }
-    const toDateStr = (s) => `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
-    const from = parts[1] ? toDateStr(parts[1]) : DateUtils.formatDate(new Date(), 'yyyy-MM-dd');
-    const hasTo = parts[2] && /^\d{8}$/.test(parts[2]);
-    const to = hasTo ? toDateStr(parts[2]) : null;
-    const text = parts.slice(hasTo ? 3 : 2).join(' ');
-    sendAttendanceNotification(replyToken, { type, from, to, text });
-  };
-
-  /**
-   * 勤怠連絡メールを送信し、成功時は送信履歴を記録します（返信はしません）。
-   * @param type 勤怠連絡種別（ABSENCE_TYPEのKEY）
-   * @param from FROM日付（'yyyy-MM-dd'）
-   * @param to TO日付（'yyyy-MM-dd' / null）
-   * @param text 本文（任意）
-   * @return {{ isSuccess, label, period }}
-   */
-  const performContact_ = (type, from, to, text) => {
-    const absenceType = ABSENCE_TYPE[type];
-    const category = CONTACT_CATEGORY_BY_TYPE[type];
-    const targetDates = buildDateRange(from, to);
-    // 件名: 種別 + 氏名 + _ + 日付（範囲は ~ 連結）
-    let date = from.replace(/-/g, '');
-    if (to) date += '~' + to.replace(/-/g, '');
-    const subject = [
-      absenceType.SUBJECT,
-      Props.getValue(PKeys.NAME_LAST),
-      Props.getValue(PKeys.NAME_FIRST),
-      '_',
-      date,
-    ].join('');
-    const body = text || '';
-    const toAddresses = resolveRecipients(PKeys.ADDRESS_TO_FOR_REST);
-    const isSuccess = GoogleApi.sendEmail(toAddresses, subject, body + buildSignature_(), getMailConfig_());
-    if (isSuccess && category) {
-      // 送信履歴を記録（連絡漏れ監視・二重連絡防止で使用）
-      recordContacts(targetDates, category);
-    }
-    const period = to ? `${from}〜${to}` : from;
-    return { isSuccess, label: absenceType.LABEL, period };
-  };
-
-  /**
-   * 勤怠連絡を行います。
-   * @param replyToken リプライトークン
-   * @param data 入力データ（type: 勤怠連絡種別, from: FROM日付, to: TO日付, text: 本文）
-   */
-  const sendAttendanceNotification = (replyToken, data) => {
-    if (!(data.type in ABSENCE_TYPE)) {
-        LineManager.replyFlex(replyToken, 'パラメータ不正', FlexCards.result({ status: 'ng', title: 'パラメータが不正です' }));
-        return;
-    }
-    const absenceType = ABSENCE_TYPE[data.type];
-    // 連絡済みチェック（同一日・同一カテゴリの二重連絡を防止）
-    const category = CONTACT_CATEGORY_BY_TYPE[data.type];
-    const targetDates = buildDateRange(data.from, data.to);
-    if (category && targetDates.length && targetDates.every((d) => isContacted(d, category))) {
-      const period = data.to ? `${data.from}〜${data.to}` : data.from;
-      LineManager.replyFlex(replyToken, `${absenceType.LABEL}連絡`, FlexCards.result({ status: 'info', title: '連絡済みです', subtitle: `${absenceType.LABEL} ・ ${period}` }));
-      return;
-    }
-    // メール送信＋履歴記録
-    const { isSuccess, label, period } = performContact_(data.type, data.from, data.to, data.text);
-    const subtitle = `${label} ・ ${period}`;
-    const result = isSuccess
-      ? { status: 'ok', title: '送信しました', subtitle }
-      : { status: 'ng', title: '送信に失敗しました', subtitle };
-    LineManager.replyFlex(replyToken, `${label}連絡`, FlexCards.result(result));
-  }
-
-  /**
-   * 勤怠連絡を行います。
-   * @param replyToken リプライトークン
-   * @param data データ
-   * @param params カレンダーにて指定した値
-   */
-  const executeContactWork = (replyToken, data, params) => {
-    switch (data.times) {
-      case 1:
-        // ２回目（勤怠種別選択後）
-        data.times = 2;
-        if (ABSENCE_TYPE[data.type].USE_PERIOD) {
-          // 期間指定あり
-          postPeriodSelect(replyToken, data, 'date');
-          return
-        }
-        break;
-      case 2:
-        // ３回目（To選択後）
-        if (params) {
-          // To選択後
-          data.to = params.date;
-        }
-        break;
-      default:
-        // １回目（From選択後）
-        data.times = 1;
-        data.from = params.date;
-        // 勤怠種別選択  
-        postAbsenceTypeSelect(replyToken, data);
-        return;
-    }
-    
-    // 勤怠連絡
-    sendAttendanceNotification(replyToken, data);
-  }
-
-  // ===== 連絡状況の照会（連絡したっけ？の確認） =====
-
-  /**
-   * 勤務表の1日の状態から必要な連絡カテゴリを返します（checkContactOmissionsと同一基準）。
-   * @param type 勤怠区分
-   * @param start 出社時刻（'HH:mm' / '-' / ''）
-   * @param end 退社時刻（'HH:mm' / '-' / ''）
-   * @param dayDate 対象日（営業日判定に使用）
-   */
-  const neededCategoriesFromSheet_ = (type, start, end, dayDate) => {
-    if (isLeaveType(type)) {
-      return [CONTACT_CATEGORY.ABSENCE];
-    }
-    if (type === TYPE.HOLIDAY_WORKING) {
-      const cats = [CONTACT_CATEGORY.HOLIDAY_WORK];
-      if (isOverWorkEnd(end)) cats.push(CONTACT_CATEGORY.OVER_WORK);
-      return cats;
-    }
-    if (!DateUtils.isBizDate(dayDate)) return [];
-    const cats = [];
-    if (isLateStart(start)) cats.push(CONTACT_CATEGORY.LATE_WORK);
-    if (isEarlyEnd(end)) cats.push(CONTACT_CATEGORY.EARLY_WORK);
-    if (isOverWorkEnd(end)) cats.push(CONTACT_CATEGORY.OVER_WORK);
-    return cats;
-  };
-
-  /**
-   * 当月の連絡状況を (日付×カテゴリ) で収集します。
-   * 勤務表の状態（要連絡）と連絡履歴（連絡済み・未来日含む）を合成。
-   * @return [{ dateStr, label, cat, catLabel, sent, pending }]（日付昇順・カテゴリ表示順）
-   */
-  const collectContactStatus_ = () => {
-    const now = new Date();
-    const curYm = DateUtils.formatDate(now, 'yyyy-MM');
-    const sent = getSentContacts();
-
-    // 勤務表（当日まで）から「要連絡」カテゴリを収集
-    const neededMap = new Map(); // dateStr -> Set(category)
-    const ssFile = getFile(now);
-    if (ssFile) {
-      const sheet = getMainSheet(ssFile);
-      const values = sheet.getRange(13, COLUMN_META.DAY.NO, now.getDate(), COLUMN_META.DIFF.NO).getValues();
-      for (const row of values) {
-        const dayDate = row[COLUMN_META.DAY.IDX];
-        if (!(dayDate instanceof Date) || dayDate.getMonth() !== now.getMonth()) continue;
-        const cats = neededCategoriesFromSheet_(
-          row[COLUMN_META.TYPE.IDX],
-          getTime(row[COLUMN_META.START.IDX]),
-          getTime(row[COLUMN_META.END.IDX]),
-          dayDate,
-        );
-        if (cats.length) neededMap.set(DateUtils.formatDate(dayDate, 'yyyy-MM-dd'), new Set(cats));
-      }
-    }
-
-    // 要連絡日 ∪ 連絡済み日（当月分。連絡履歴は未来日も保持しているため拾える）
-    const dateSet = new Set(neededMap.keys());
-    for (const key of sent.keys()) {
-      if (typeof key === 'string' && key.slice(0, 7) === curYm) dateSet.add(key);
-    }
-
-    const entries = [];
-    for (const dateStr of [...dateSet].sort()) {
-      const needed = neededMap.get(dateStr) || new Set();
-      const sentCats = new Set(sent.get(dateStr) || []);
-      const label = DateUtils.formatDate(Utilities.parseDate(dateStr, 'JST', 'yyyy-MM-dd'), 'M/d(aaa)');
-      for (const cat of CONTACT_CATEGORY_ORDER) {
-        const isSent = sentCats.has(cat);
-        const isNeeded = needed.has(cat);
-        if (!isSent && !isNeeded) continue;
-        entries.push({
-          dateStr,
-          label,
-          cat,
-          catLabel: CONTACT_CATEGORY_LABEL[cat] || cat,
-          sent: isSent,
-          pending: isNeeded && !isSent,
-        });
-      }
-    }
-    return entries;
-  };
-
-  /**
-   * 'yyyy-MM-dd'の昇順配列を連続する区間に分割します。
-   * @return [{ from, to }]（単日は to=null）
-   */
-  const groupConsecutiveDates_ = (sortedDateStrs) => {
-    const groups = [];
-    for (const ds of sortedDateStrs) {
-      const last = groups[groups.length - 1];
-      if (last) {
-        const next = new Date(last.toDate);
-        next.setDate(next.getDate() + 1);
-        if (DateUtils.formatDate(next, 'yyyy-MM-dd') === ds) {
-          last.toDate = Utilities.parseDate(ds, 'JST', 'yyyy-MM-dd');
-          last.to = ds;
-          continue;
-        }
-      }
-      groups.push({ from: ds, to: ds, toDate: Utilities.parseDate(ds, 'JST', 'yyyy-MM-dd') });
-    }
-    return groups.map((g) => ({ from: g.from, to: g.from === g.to ? null : g.to }));
-  };
-
-  /**
-   * 当月の連絡状況カードを表示します（✅連絡済 / ⚠️要連絡＋連絡ボタン）。
-   * @param replyToken リプライトークン
-   */
-  const displayContactStatus = (replyToken) => {
-    const now = new Date();
-    const entries = collectContactStatus_();
-    const pendingCount = entries.filter((e) => e.pending).length;
-    LineManager.replyFlex(replyToken, '連絡状況', FlexCards.contactStatus({
-      title: '連絡状況',
-      subtitle: DateUtils.formatDate(now, 'yyyy年M月'),
-      entries,
-      pendingCount,
-    }));
-  };
-
-  /**
-   * 連絡状況から「連絡する」を実行します（日付プリセット）。
-   * @param replyToken リプライトークン
-   * @param data { date, cat, type? }
-   */
-  const executeContactNow = (replyToken, data) => {
-    if (data.cat === CONTACT_CATEGORY.ABSENCE) {
-      if (!data.type) {
-        // 欠勤系は通常休/客先休を選ばせる
-        const actions = ['REST', 'WORK_REST'].map((key) => LineUtil.makeQuickReply({
-          type: 'postback',
-          label: ABSENCE_TYPE[key].LABEL,
-          text: ABSENCE_TYPE[key].LABEL,
-          data: JSON.stringify({ action: 'contact-now', date: data.date, cat: data.cat, type: key }),
-        }));
-        LineManager.replyQuick(replyToken, '連絡種別を教えて下さい。', actions);
-        return;
-      }
-      sendAttendanceNotification(replyToken, { type: data.type, from: data.date, to: null, text: '' });
-      return;
-    }
-    // 遅刻/早退/深夜/休出はカテゴリ＝ABSENCE_TYPEのKEYなので種別確定済み
-    sendAttendanceNotification(replyToken, { type: data.cat, from: data.date, to: null, text: '' });
-  };
-
-  /**
-   * 未連絡をまとめて連絡します（欠勤系は連続日を期間レンジで一括送信）。
-   * @param replyToken リプライトークン
-   * @param data { type? }（欠勤系がある場合は通常休/客先休のKEY）
-   */
-  const executeContactBulk = (replyToken, data) => {
-    const pendings = collectContactStatus_().filter((e) => e.pending);
-    if (!pendings.length) {
-      LineManager.replyFlex(replyToken, 'まとめて連絡', FlexCards.result({ status: 'info', title: '未連絡はありません' }));
-      return;
-    }
-    const hasAbsence = pendings.some((e) => e.cat === CONTACT_CATEGORY.ABSENCE);
-    if (hasAbsence && !data.type) {
-      // 欠勤系を含む場合は通常休/客先休を一度だけ選ばせる
-      const actions = ['REST', 'WORK_REST'].map((key) => LineUtil.makeQuickReply({
-        type: 'postback',
-        label: ABSENCE_TYPE[key].LABEL,
-        text: ABSENCE_TYPE[key].LABEL,
-        data: JSON.stringify({ action: 'contact-bulk', type: key }),
-      }));
-      LineManager.replyQuick(replyToken, '欠勤の連絡種別を教えて下さい。', actions);
-      return;
-    }
-
-    const results = [];
-    // 欠勤系: 連続日を期間レンジでまとめて送信
-    const absenceDates = pendings.filter((e) => e.cat === CONTACT_CATEGORY.ABSENCE).map((e) => e.dateStr).sort();
-    for (const range of groupConsecutiveDates_(absenceDates)) {
-      results.push(performContact_(data.type, range.from, range.to, ''));
-    }
-    // 遅刻/早退/深夜/休出: 単日イベントなので1日ずつ送信
-    for (const e of pendings) {
-      if (e.cat === CONTACT_CATEGORY.ABSENCE) continue;
-      results.push(performContact_(e.cat, e.dateStr, null, ''));
-    }
-
-    const sentCount = results.filter((r) => r.isSuccess).length;
-    const failedCount = results.length - sentCount;
-    const result = failedCount
-      ? { status: 'ng', title: '一部送信に失敗しました', subtitle: `送信 ${sentCount}件 / 失敗 ${failedCount}件` }
-      : { status: 'ok', title: 'まとめて連絡しました', subtitle: `送信 ${sentCount}件` };
-    LineManager.replyFlex(replyToken, 'まとめて連絡', FlexCards.result(result));
-  };
-
   // ===== 状況確認（オンデマンド） =====
 
   /**
@@ -1640,7 +1151,7 @@ const MainProc = (function () {
    */
   const displayMonthForecast = (replyToken) => {
     const now = new Date();
-    if (!getFile(now)) {
+    if (!getFileId(now)) {
       postErrMsgFileNotFound(replyToken, now);
       return;
     }
@@ -1727,123 +1238,175 @@ const MainProc = (function () {
   }
 
   /**
-   * ファイル取得
+   * 勤務表ファイルのIDを取得します（Drive APIを呼ばない軽量版）。
+   * @param date 日付
+   * @return ファイルID / 未作成ならundefined
+   */
+  const getFileId = (date) => {
+    const fileMap = Props.getJson(PKeys.FILE_MAP);
+    if (!fileMap) return undefined;
+    return fileMap.get(DateUtils.formatDate(date, 'yyyyMM'));
+  }
+
+  /**
+   * ファイル取得（リネーム・URL取得などファイル操作が必要な場合のみ使用）。
    * @param date 日付
    * @return ファイル
    */
   const getFile = (date) => {
-    const fileMap = Props.getJson(PKeys.FILE_MAP)
-    const yearMonth = DateUtils.formatDate(date, 'yyyyMM');
-    const id = fileMap.get(yearMonth);
-    if (id) {
-      return DriveApp.getFileById(id);
-    }
-    return undefined;
+    const id = getFileId(date);
+    return id ? DriveApp.getFileById(id) : undefined;
   }
 
-  /**
-   * 勤怠連絡漏れ・勤怠未登録を監視します。
-   * replyToken指定時はオンデマンド点検として返信（漏れなしも返信）、未指定時はプッシュ通知。
-   * @param mode 'noon': 開始登録のみで判定 / 'night': 開始・終了の両方で判定
-   * @param replyToken リプライトークン（オンデマンド点検時のみ）
-   */
-  const checkContactOmissions = (mode, replyToken = '') => {
-    const now = new Date();
-    const ssFile = getFile(now);
-    if (!ssFile) {
-      if (replyToken) postErrMsgFileNotFound(replyToken, now);
-      return;
-    }
+  // ===== 未登録の勤怠（一覧・後追い登録） =====
 
-    const sheet = getMainSheet(ssFile);
+  /** 'H:mm' の設定値を 'HH:mm' に揃えます（datetimepickerのinitialは2桁固定）。 */
+  const padTime = (time) => /^\d:/.test(time) ? `0${time}` : time;
+
+  /**
+   * 時刻入力カード1行分のエントリを組み立てます。
+   * 時刻は入力の初期値に使うため、登録済みならその時刻、未登録なら勤務表の既定値を採る。
+   * @param dayDate 対象日
+   * @param row 勤務表の該当行
+   * @param punch PUNCH_LOGの該当エントリ
+   */
+  const buildPunchEntry_ = (dayDate, row, punch) => ({
+    dateStr: DateUtils.formatDate(dayDate, 'yyyy-MM-dd'),
+    label: DateUtils.formatDate(dayDate, 'M/d(aaa)'),
+    start: getTime(row[COLUMN_META.START.IDX]) || padTime(Props.getValue(PKeys.START_TIME_DEFAULT)),
+    end: getTime(row[COLUMN_META.END.IDX]) || padTime(Props.getValue(PKeys.END_TIME_DEFAULT)),
+    needStart: !punch.start,
+    needEnd: !punch.end,
+  });
+
+  /**
+   * 当月（1日〜当日）の未登録日を収集します。未来日は対象外。
+   * 勤務表は営業日に既定値が入っているため、登録有無はPUNCH_LOGで判断する。
+   * 休暇系・休日出勤は勤怠区分の登録で完了しているため対象外。
+   * @return [{ dateStr, label, start, end, needStart, needEnd }]（日付昇順）/ 勤務表が無ければnull
+   */
+  const collectUnregistered_ = () => {
+    const now = new Date();
+    const sheet = getMainSheet(now);
+    if (!sheet) return null;
     const values = sheet.getRange(13, COLUMN_META.DAY.NO, now.getDate(), COLUMN_META.DIFF.NO).getValues();
     const punchLog = getPunchLog();
-    const sent = getSentContacts();
 
-    const unregistered = []; // 勤怠未登録（勤怠監視）漏れ
-    const absence = [];      // 欠勤連絡漏れ
-    const late = [];         // 遅刻連絡漏れ
-    const early = [];        // 早退連絡漏れ
-    const overWork = [];     // 深夜作業連絡漏れ
-    const holidayWork = [];  // 休出連絡漏れ
-    const sheetByDate = new Map(); // 逆方向チェック用：日付 → シート状態
-
+    const entries = [];
     for (const row of values) {
       const dayDate = row[COLUMN_META.DAY.IDX];
       if (!(dayDate instanceof Date) || dayDate.getMonth() !== now.getMonth()) continue;
 
-      const dateStr = DateUtils.formatDate(dayDate, 'yyyy-MM-dd');
-      const label = DateUtils.formatDate(dayDate, 'M/d(aaa)');
       const type = row[COLUMN_META.TYPE.IDX];
-      const start = getTime(row[COLUMN_META.START.IDX]);
-      const end = getTime(row[COLUMN_META.END.IDX]);
-      const contacts = sent.get(dateStr) || [];
-      sheetByDate.set(dateStr, { type, start, end, label });
-
-      // 欠勤系の日は欠勤連絡のみ判定（他チェックの対象外）
-      if (isLeaveType(type)) {
-        if (!contacts.includes(CONTACT_CATEGORY.ABSENCE)) absence.push(label);
-        continue;
-      }
-
-      // 休日出勤（非営業日の労働）は休出連絡＋深夜のみ判定
-      if (type === TYPE.HOLIDAY_WORKING) {
-        if (!contacts.includes(CONTACT_CATEGORY.HOLIDAY_WORK)) holidayWork.push(label);
-        if (isOverWorkEnd(end) && !contacts.includes(CONTACT_CATEGORY.OVER_WORK)) overWork.push(label);
-        continue;
-      }
-
-      // 非営業日かつ休出でない日は対象外
+      if (isLeaveType(type) || type === TYPE.HOLIDAY_WORKING) continue;
       if (!DateUtils.isBizDate(dayDate)) continue;
 
-      // 遅刻連絡漏れ（出社がデフォルトより遅いが未連絡）
-      if (isLateStart(start) && !contacts.includes(CONTACT_CATEGORY.LATE_WORK)) late.push(label);
+      const punch = punchLog.get(DateUtils.formatDate(dayDate, 'yyyy-MM-dd')) || { start: false, end: false };
+      if (punch.start && punch.end) continue;
 
-      // 早退連絡漏れ（退社がデフォルトより早いが未連絡）
-      if (isEarlyEnd(end) && !contacts.includes(CONTACT_CATEGORY.EARLY_WORK)) early.push(label);
-
-      // 深夜作業連絡漏れ（退社22時以降だが未連絡）
-      if (isOverWorkEnd(end) && !contacts.includes(CONTACT_CATEGORY.OVER_WORK)) overWork.push(label);
-
-      // 勤怠未登録漏れ（LINEでの開始/終了登録で判定）
-      const punch = punchLog.get(dateStr) || { start: false, end: false };
-      const missing = mode === 'night' ? (!punch.start || !punch.end) : !punch.start;
-      if (missing) unregistered.push(label);
+      entries.push(buildPunchEntry_(dayDate, row, punch));
     }
+    return entries;
+  };
 
-    // 逆方向チェック：連絡済みだが勤怠登録がその状態になっていない
-    const CAT_LABEL = {
-      [CONTACT_CATEGORY.ABSENCE]: '欠勤',
-      [CONTACT_CATEGORY.LATE_WORK]: '遅刻',
-      [CONTACT_CATEGORY.EARLY_WORK]: '早退',
-      [CONTACT_CATEGORY.OVER_WORK]: '深夜',
-      [CONTACT_CATEGORY.HOLIDAY_WORK]: '休出',
-    };
-    const isReflected = (cat, info) => {
-      switch (cat) {
-        case CONTACT_CATEGORY.ABSENCE:
-          return isLeaveType(info.type);
-        case CONTACT_CATEGORY.LATE_WORK:
-          return isLateStart(info.start);
-        case CONTACT_CATEGORY.EARLY_WORK:
-          return isEarlyEnd(info.end);
-        case CONTACT_CATEGORY.OVER_WORK:
-          return isOverWorkEnd(info.end);
-        case CONTACT_CATEGORY.HOLIDAY_WORK:
-          return info.type === TYPE.HOLIDAY_WORKING;
-        default:
-          return true; // 判定対象外は未反映扱いしない
-      }
-    };
-    const unreflected = []; // 連絡済み・勤怠未反映
-    for (const [dateStr, info] of sheetByDate) {
-      const cats = sent.get(dateStr);
-      if (!Array.isArray(cats) || !cats.length) continue;
-      const mismatched = cats.filter((c) => CAT_LABEL[c] && !isReflected(c, info));
-      if (mismatched.length) {
-        unreflected.push(`${info.label}（${mismatched.map((c) => CAT_LABEL[c]).join('/')}）`);
-      }
+  /**
+   * 指定日1日分の時刻入力カードを表示します（カレンダー登録の出勤で使用）。
+   * @param replyToken リプライトークン
+   * @param dateStr 対象日 'yyyy-MM-dd'
+   * @param note 直前の登録結果（任意）
+   */
+  const displayDayPunch = (replyToken, dateStr, note = '') => {
+    const date = Utilities.parseDate(dateStr, 'JST', 'yyyy-MM-dd');
+    if (replySubmittedLock_(replyToken, date)) return;
+    const sheet = getMainSheet(date);
+    if (!sheet) {
+      postErrMsgFileNotFound(replyToken, date);
+      return;
     }
+    const row = sheet.getRange(date.getDate() + 12, COLUMN_META.DAY.NO, 1, COLUMN_META.DIFF.NO).getValues()[0];
+    const punch = getPunchLog().get(dateStr) || { start: false, end: false };
+    const entry = buildPunchEntry_(date, row, punch);
+    const title = `${entry.label} の勤怠`;
+    LineManager.replyFlex(replyToken, title, FlexCards.unregistered({
+      title,
+      note,
+      entries: [entry],
+      single: true,
+    }));
+  };
+
+  /**
+   * 当月の未登録一覧を表示します（出社/退社を個別に入力できるカード）。
+   * @param replyToken リプライトークン
+   * @param note 直前の登録結果（任意）
+   */
+  const displayUnregistered = (replyToken, note = '') => {
+    const now = new Date();
+    const entries = collectUnregistered_();
+    if (entries === null) {
+      postErrMsgFileNotFound(replyToken, now);
+      return;
+    }
+    if (!entries.length) {
+      const result = note
+        ? { status: 'ok', title: note, subtitle: '未登録はありません' }
+        : { status: 'ok', title: '未登録はありません', subtitle: `${DateUtils.formatDate(now, 'yyyy年M月')} 時点` };
+      LineManager.replyFlex(replyToken, '未登録の勤怠', FlexCards.result(result));
+      return;
+    }
+    LineManager.replyFlex(replyToken, '未登録の勤怠', FlexCards.unregistered({
+      title: '未登録の勤怠',
+      subtitle: DateUtils.formatDate(now, 'yyyy年M月'),
+      note,
+      entries,
+    }));
+  };
+
+  /**
+   * 未登録一覧から出社/退社の時刻を登録し、更新後の一覧を返します。
+   * 選んだ側だけを更新し、もう一方は現状を維持します。
+   * @param replyToken リプライトークン
+   * @param data { date: 'yyyy-MM-dd', field: 'start' | 'end', single: 1日カードから呼ばれたか }
+   * @param params 時刻選択の結果（{ time: 'HH:mm' }）
+   */
+  const executeFillPunch = (replyToken, data, params) => {
+    if (!params || !params.time) return;
+    const date = Utilities.parseDate(data.date, 'JST', 'yyyy-MM-dd');
+    const isStart = data.field === 'start';
+    const updated = updateTime(replyToken, {
+      date,
+      type: TYPE.WORKING,
+      start: isStart ? params.time : '-',
+      end: isStart ? '-' : params.time,
+    }, { reply: false });
+    // 中断時はupdateTimeが理由を返信済み
+    if (!updated) return;
+    // 続けて入力できるよう、打刻カードではなく呼び出し元のカードを返す。
+    // 打刻カードが出ないぶん、確定した工数は結果の一文に添える。
+    const label = DateUtils.formatDate(date, 'M/d(aaa)');
+    let note = `${label} ${isStart ? '出社' : '退社'} ${params.time} を登録しました`;
+    if (updated.kosu) note += `　工数 ${updated.kosu}`;
+    if (data.single) {
+      displayDayPunch(replyToken, data.date, note);
+      return;
+    }
+    displayUnregistered(replyToken, note);
+  };
+
+  /**
+   * 勤怠未登録・勤務表未提出を監視し、漏れがあればプッシュ通知します。
+   * オンデマンドの確認はメニューの「未登録」（その場で入力もできる）が担う。
+   * @param mode 'noon': 開始登録のみで判定 / 'night': 開始・終了の両方で判定
+   */
+  const checkAttendanceOmissions = (mode) => {
+    const now = new Date();
+    const entries = collectUnregistered_();
+    if (entries === null) return;
+
+    // 12時は開始登録のみ、23時は開始・終了の両方で未登録を判定
+    const unregistered = entries
+      .filter((e) => mode === 'night' || e.needStart)
+      .map((e) => e.label);
 
     // 勤務表未提出チェック（23時のみ・最終営業日に未提出なら通知）
     let timesheetUnsubmitted = false;
@@ -1857,23 +1420,6 @@ const MainProc = (function () {
     const sections = [];
     if (timesheetUnsubmitted) sections.push({ label: '勤務表未提出', dates: [`${DateUtils.formatDate(now, 'yyyy年M月')}分（最終営業日）`] });
     if (unregistered.length) sections.push({ label: '勤怠未登録', dates: unregistered });
-    if (absence.length) sections.push({ label: '欠勤連絡漏れ', dates: absence });
-    if (late.length) sections.push({ label: '遅刻連絡漏れ', dates: late });
-    if (early.length) sections.push({ label: '早退連絡漏れ', dates: early });
-    if (overWork.length) sections.push({ label: '深夜作業連絡漏れ', dates: overWork });
-    if (holidayWork.length) sections.push({ label: '休出連絡漏れ', dates: holidayWork });
-    if (unreflected.length) sections.push({ label: '連絡済み・勤怠未反映', dates: unreflected });
-
-    // オンデマンド点検: 漏れなしも返信し、漏れありはその場で返信
-    if (replyToken) {
-      if (!sections.length) {
-        LineManager.replyFlex(replyToken, '勤怠チェック', FlexCards.result({ status: 'ok', title: '抜け漏れはありません', subtitle: `${DateUtils.formatDate(now, 'yyyy年M月')} 時点` }));
-        return;
-      }
-      const title = '勤怠チェック';
-      LineManager.replyFlex(replyToken, title, FlexCards.omission({ title, sections }));
-      return;
-    }
 
     if (!sections.length) return;
     const title = `勤怠漏れ通知（${mode === 'night' ? '23時' : '12時'}）`;
@@ -1897,25 +1443,17 @@ const MainProc = (function () {
           // カレンダー勤怠登録
           executeRegistCalendar(replyToken, data, receivePostback.params);
           break;
-        case 'absence-mail':
-          // 勤怠連絡
-          executeContactWork(replyToken, data, receivePostback.params);
+        case 'unregistered':
+          // 未登録一覧
+          displayUnregistered(replyToken);
           break;
-        case 'contact-status':
-          // 連絡状況の照会
-          displayContactStatus(replyToken);
+        case 'fill-punch':
+          // 未登録一覧からの出社/退社の時刻入力
+          executeFillPunch(replyToken, data, receivePostback.params);
           break;
-        case 'contact-now':
-          // 連絡状況からそのまま連絡
-          executeContactNow(replyToken, data);
-          break;
-        case 'contact-bulk':
-          // 未連絡をまとめて連絡
-          executeContactBulk(replyToken, data);
-          break;
-        case 'contact-check':
-          // 勤怠チェック（オンデマンド点検）
-          checkContactOmissions('noon', replyToken);
+        case 'weekly':
+          // 今週の状況
+          displayWeeklySummary(replyToken);
           break;
         case 'submit-status':
           // 提出状況
@@ -1974,11 +1512,6 @@ const MainProc = (function () {
         displayAttendanceReport(replyToken, text.replace('リスト', '').trim());
         return;
       }
-      if (text.match(/^[休|客先]+/)) {
-        // 勤怠連絡
-        sendMailRest(replyToken, text.trim().split(' '));
-        return;
-      }
       const workInfo = getWorkInfo(replyToken, text);
       if (!workInfo) {
         // 勤怠情報取得失敗時
@@ -1987,10 +1520,10 @@ const MainProc = (function () {
       updateTime(replyToken, workInfo);
     },
     /**
-     * 勤怠連絡漏れ・勤怠未登録を監視します（時間主導トリガーから実行）。
+     * 勤怠未登録・勤務表未提出を監視します（時間主導トリガーから実行）。
      * @param mode 'noon' | 'night'
      */
-    checkContactOmissions: (mode) => checkContactOmissions(mode),
+    checkAttendanceOmissions: (mode) => checkAttendanceOmissions(mode),
     /**
      * 週次サマリーを当日基準で通知します（手動テスト用。自動送信は登録完了時に発火）。
      */

@@ -25,14 +25,14 @@ function doPost(e) {
  * 12時トリガー: 開始登録のみで未登録を判定。
  */
 function checkAttendanceNoon() {
-  MainProc.checkContactOmissions('noon');
+  MainProc.checkAttendanceOmissions('noon');
 }
 
 /**
  * 23時トリガー: 開始・終了の両方で未登録を判定。
  */
 function checkAttendanceNight() {
-  MainProc.checkContactOmissions('night');
+  MainProc.checkAttendanceOmissions('night');
 }
 
 /**

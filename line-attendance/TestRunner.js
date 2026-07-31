@@ -104,20 +104,6 @@ function test_message_リスト先月() {
   _teardownTest_();
 }
 
-/** テスト: 欠勤連絡（テキスト形式） */
-function test_message_欠勤連絡() {
-  _setupTest_();
-  _runMessage_('休 20260318 体調不良のため休みます');
-  _teardownTest_();
-}
-
-/** テスト: 客先休業連絡（テキスト形式） */
-function test_message_客先休連絡() {
-  _setupTest_();
-  _runMessage_('客先休 20260318 20260319');
-  _teardownTest_();
-}
-
 /** テスト: 出勤ポストバック */
 function test_postback_出勤() {
   _setupTest_();
@@ -160,73 +146,52 @@ function test_postback_ヘルプ() {
   _teardownTest_();
 }
 
-/** テスト: カレンダー登録ポストバック（日時選択後） */
+/** テスト: カレンダー登録ポストバック（出勤・日付選択後 → 1日カード） */
 function test_postback_カレンダー() {
   _setupTest_();
-  _runPostback_({ action: 'calendar', type: '出勤' }, { datetime: '2026-03-18T09:00' });
+  _runPostback_({ action: 'calendar', type: '出勤' }, { date: '2026-07-22' });
   _teardownTest_();
 }
 
-/** テスト: 勤怠連絡フロー ステップ1（From日付選択後） */
-function test_postback_勤怠連絡_step1() {
+/** テスト: カレンダー登録ポストバック（欠勤・日付選択後） */
+function test_postback_カレンダー欠勤() {
   _setupTest_();
-  _runPostback_({ action: 'absence-mail' }, { date: '2026-03-18' });
+  _runPostback_({ action: 'calendar', type: '欠勤' }, { date: '2026-07-22' });
   _teardownTest_();
 }
 
-/** テスト: 勤怠連絡フロー ステップ2（種別選択後、期間なし） */
-function test_postback_勤怠連絡_step2_期間なし() {
+/** テスト: 1日カードから退社時刻を登録（同じ1日カードへ戻る） */
+function test_postback_1日カード_退社入力() {
   _setupTest_();
-  _runPostback_({ action: 'absence-mail', times: 1, type: 'OVER_WORK', from: '2026-03-18' });
+  _runPostback_({ action: 'fill-punch', date: '2026-07-22', field: 'end', single: 1 }, { time: '19:30' });
   _teardownTest_();
 }
 
-/** テスト: 勤怠連絡フロー ステップ2（種別選択後、期間あり） */
-function test_postback_勤怠連絡_step2_期間あり() {
+/** テスト: 未登録一覧 */
+function test_postback_未登録一覧() {
   _setupTest_();
-  _runPostback_({ action: 'absence-mail', times: 1, type: 'REST', from: '2026-03-18' });
+  _runPostback_({ action: 'unregistered' });
   _teardownTest_();
 }
 
-/** テスト: 勤怠連絡フロー ステップ3（To日付選択後 → 送信） */
-function test_postback_勤怠連絡_step3() {
+/** テスト: 未登録一覧から退社時刻を登録（出社は現状維持） */
+function test_postback_未登録_退社入力() {
   _setupTest_();
-  _runPostback_({ action: 'absence-mail', times: 2, type: 'REST', from: '2026-03-18' }, { date: '2026-03-19' });
+  _runPostback_({ action: 'fill-punch', date: '2026-07-22', field: 'end' }, { time: '19:30' });
   _teardownTest_();
 }
 
-/** テスト: 連絡状況の照会 */
-function test_postback_連絡状況() {
+/** テスト: 未登録一覧から出社時刻を登録（退社は現状維持） */
+function test_postback_未登録_出社入力() {
   _setupTest_();
-  _runPostback_({ action: 'contact-status' });
+  _runPostback_({ action: 'fill-punch', date: '2026-07-22', field: 'start' }, { time: '10:00' });
   _teardownTest_();
 }
 
-/** テスト: 連絡状況からそのまま連絡（欠勤→種別選択） */
-function test_postback_連絡状況_連絡する欠勤() {
+/** テスト: 今週の状況（週の途中でも当日までで集計） */
+function test_postback_今週の状況() {
   _setupTest_();
-  _runPostback_({ action: 'contact-now', date: '2026-03-18', cat: 'ABSENCE' });
-  _teardownTest_();
-}
-
-/** テスト: 連絡状況からそのまま連絡（深夜→即送信） */
-function test_postback_連絡状況_連絡する深夜() {
-  _setupTest_();
-  _runPostback_({ action: 'contact-now', date: '2026-03-18', cat: 'OVER_WORK' });
-  _teardownTest_();
-}
-
-/** テスト: 未連絡をまとめて連絡（欠勤種別選択後） */
-function test_postback_まとめて連絡() {
-  _setupTest_();
-  _runPostback_({ action: 'contact-bulk', type: 'REST' });
-  _teardownTest_();
-}
-
-/** テスト: 勤怠チェック（オンデマンド点検） */
-function test_postback_勤怠チェック() {
-  _setupTest_();
-  _runPostback_({ action: 'contact-check' });
+  _runPostback_({ action: 'weekly' });
   _teardownTest_();
 }
 
@@ -258,17 +223,17 @@ function test_postback_翌月作成() {
   _teardownTest_();
 }
 
-/** テスト: 連絡漏れ監視（12時・開始登録のみで判定） */
+/** テスト: 勤怠監視（12時・開始登録のみで判定） */
 function test_監視_12時() {
   _setupTest_();
-  MainProc.checkContactOmissions('noon');
+  MainProc.checkAttendanceOmissions('noon');
   _teardownTest_();
 }
 
-/** テスト: 連絡漏れ監視（23時・開始終了の両方で判定） */
+/** テスト: 勤怠監視（23時・開始終了の両方で判定） */
 function test_監視_23時() {
   _setupTest_();
-  MainProc.checkContactOmissions('night');
+  MainProc.checkAttendanceOmissions('night');
   _teardownTest_();
 }
 
@@ -309,19 +274,16 @@ function test_all() {
     ['MSG クリア',             () => _runMessage_('c')],
     ['MSG リスト当月',         () => _runMessage_('リスト')],
     ['MSG リスト先月',         () => _runMessage_('リスト1')],
-    ['MSG 欠勤連絡',           () => _runMessage_('休 20260318 体調不良')],
     ['PB 出勤',                () => _runPostback_({ action: 'start' })],
     ['PB 退勤',                () => _runPostback_({ action: 'end' })],
     ['PB 欠勤',                () => _runPostback_({ action: 'break' })],
     ['PB 一覧',                () => _runPostback_({ action: 'list', month: '' })],
     ['PB 推移',                () => _runPostback_({ action: 'history' })],
     ['PB ヘルプ',              () => _runPostback_({ action: 'help' })],
-    ['PB 勤怠連絡step1',       () => _runPostback_({ action: 'absence-mail' }, { date: '2026-03-18' })],
-    ['PB 勤怠連絡step2期間なし', () => _runPostback_({ action: 'absence-mail', times: 1, type: 'OVER_WORK', from: '2026-03-18' })],
-    ['PB 勤怠連絡step3',       () => _runPostback_({ action: 'absence-mail', times: 2, type: 'REST', from: '2026-03-18' }, { date: '2026-03-19' })],
-    ['PB 連絡状況',            () => _runPostback_({ action: 'contact-status' })],
-    ['PB 連絡状況_連絡する深夜', () => _runPostback_({ action: 'contact-now', date: '2026-03-18', cat: 'OVER_WORK' })],
-    ['PB 勤怠チェック',         () => _runPostback_({ action: 'contact-check' })],
+    ['PB カレンダー出勤',       () => _runPostback_({ action: 'calendar', type: '出勤' }, { date: '2026-07-22' })],
+    ['PB 未登録一覧',           () => _runPostback_({ action: 'unregistered' })],
+    ['PB 未登録_退社入力',      () => _runPostback_({ action: 'fill-punch', date: '2026-07-22', field: 'end' }, { time: '19:30' })],
+    ['PB 今週の状況',           () => _runPostback_({ action: 'weekly' })],
     ['PB 提出状況',            () => _runPostback_({ action: 'submit-status' })],
     ['PB 着地見込み',          () => _runPostback_({ action: 'forecast' })],
     ['PB 勤務表を開く',        () => _runPostback_({ action: 'workbook' })],
