@@ -13,7 +13,7 @@
  * ページ構成:
  *   A=登録（する）  : 出社/退社/欠勤、カレンダー出勤/欠勤/クリア
  *   B=稼働・提出（送る）: 当月稼働/先月稼働/推移、未登録/提出/ヘルプ
- *   C=状況確認（見る）: 今週の状況/着地見込み/提出状況、勤務表を開く/翌月作成/(空き)
+ *   C=状況確認（見る）: 今週の状況/着地見込み/提出状況、勤務表を開く/翌月作成/休暇予約
  *      上段＝いまの状況（今週→当月→提出）、下段＝道具
  */
 
@@ -76,7 +76,7 @@ const RICHMENU_C = {
     { bounds: { x: 800, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"submit-status"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 0, y: 471, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"workbook"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 400, y: 471, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"make-schedule"}', inputOption: 'closeRichMenu' } },
-    // TODO: x=800,y=471 は空き。新機能ができたら割り当てる（画像も差し替えること）
+    { bounds: { x: 800, y: 471, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"reservations"}', inputOption: 'closeRichMenu' } },
   ],
 };
 

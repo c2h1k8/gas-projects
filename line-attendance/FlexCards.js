@@ -20,6 +20,9 @@ const FlexCards = (() => {
   };
   const colorOf = (type) => TYPE_COLOR[type] || BLUE;
 
+  // 予約一覧カードに並べる最大件数（超過分は件数のみ表示）
+  const MAX_RESERVATION_ROWS = 15;
+
   const text = (t, opt = {}) => Object.assign({ type: 'text', text: String(t) }, opt);
   const sep = (margin = 'md') => ({ type: 'separator', margin, color: LIGHT });
 
@@ -49,7 +52,7 @@ const FlexCards = (() => {
     /**
      * 打刻結果カード。
      * @param {{dateLabel, type, start, end, kosu, summary}} p
-     *   summary: { total, overtime, forecast } いずれも文字列（forecastはnull可）。summary自体null可。
+     *   summary: { total, overtime, forecast } いずれも文字列でnull可（nullの項目は出さない）。summary自体null可。
      */
     punch: ({ dateLabel, type, start, end, kosu, summary }) => {
       const c = colorOf(type);
@@ -75,12 +78,16 @@ const FlexCards = (() => {
       if (!times.length && !kosu) {
         body.push(text('登録しました', { size: 'md', color: DARK, align: 'center' }));
       }
-      // 今月サマリ
+      // 今月サマリ（未来月は実績が無いため合計・残業がnullで、見込みだけになる）
       if (summary) {
-        body.push(sep());
-        const m = [metric('合計', summary.total, DARK), metric('残業', summary.overtime, c)];
+        const m = [];
+        if (summary.total) m.push(metric('合計', summary.total, DARK));
+        if (summary.overtime) m.push(metric('残業', summary.overtime, c));
         if (summary.forecast) m.push(metric('見込み', summary.forecast, GRAY));
-        body.push({ type: 'box', layout: 'horizontal', margin: 'md', contents: m });
+        if (m.length) {
+          body.push(sep());
+          body.push({ type: 'box', layout: 'horizontal', margin: 'md', contents: m });
+        }
       }
 
       return shell(c, [
@@ -312,6 +319,63 @@ const FlexCards = (() => {
     },
 
     /**
+     * 休暇の予約一覧カード（月ごとの見出し・日付単位の取消・カレンダーからの追加）。
+     * @param {{title, note, entries, addTypes}} p
+     *   entries: [{ dateStr, monthLabel, label, type }]（日付昇順）。空なら未予約の案内を出す。
+     *   addTypes: 予約を追加できる勤怠区分の配列（カレンダーを開くボタンになる）
+     */
+    reservations: ({ title, note, entries, addTypes }) => {
+      const body = [];
+      if (note) body.push(text(note, { size: 'xs', color: GRAY, align: 'center', wrap: true }));
+
+      if (entries.length) {
+        body.push(text('勤務表を作成したときに自動で反映されます', { size: 'xs', color: GRAY, align: 'center', wrap: true }));
+        body.push(sep());
+        let curMonth = '';
+        // bubbleは縦に伸びると末尾が切れるため、件数が多い場合は先頭のみ表示する
+        entries.slice(0, MAX_RESERVATION_ROWS).forEach((e) => {
+          if (e.monthLabel !== curMonth) {
+            curMonth = e.monthLabel;
+            body.push(text(curMonth, { size: 'sm', weight: 'bold', color: BLUE, margin: 'lg' }));
+          }
+          body.push({
+            type: 'box', layout: 'horizontal', margin: 'sm', alignItems: 'center', spacing: 'sm',
+            contents: [
+              text(e.label, { size: 'sm', color: DARK, weight: 'bold', flex: 4 }),
+              text(e.type, { size: 'sm', color: colorOf(e.type), weight: 'bold', flex: 4 }),
+              {
+                type: 'button', height: 'sm', style: 'secondary', flex: 3,
+                action: {
+                  type: 'postback', label: '取消',
+                  data: JSON.stringify({ action: 'cancel-reservation', date: e.dateStr }),
+                },
+              },
+            ],
+          });
+        });
+        if (entries.length > MAX_RESERVATION_ROWS) {
+          body.push(text(`… 他 ${entries.length - MAX_RESERVATION_ROWS}件`, { size: 'xs', color: GRAY, align: 'end', margin: 'md' }));
+        }
+      } else {
+        body.push(text('予約はありません', { size: 'md', color: DARK, weight: 'bold', align: 'center' }));
+        body.push(text('勤務表が未作成の月の休みを、先に登録しておけます', { size: 'xs', color: GRAY, align: 'center', wrap: true }));
+      }
+
+      (addTypes || []).forEach((t, i) => {
+        if (i === 0) body.push(sep('lg'));
+        body.push({
+          type: 'button', height: 'sm', style: 'secondary', margin: 'sm',
+          action: {
+            type: 'datetimepicker', label: `${t}を予約`, mode: 'date',
+            data: JSON.stringify({ action: 'calendar', type: t }),
+          },
+        });
+      });
+
+      return shell(BLUE, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
+    },
+
+    /**
      * リンクカード（URIボタン）。勤務表を直接開く等に使用。
      * @param {{title, subtitle, url, label}} p
      */
@@ -356,7 +420,11 @@ const FlexCards = (() => {
         section('メニュー（下のタブ）', [
           { k: '勤怠登録', v: '出社・退社・欠勤／カレンダー登録' },
           { k: '稼働・提出', v: '稼働一覧・推移／未登録の登録・勤務表提出' },
-          { k: '状況確認', v: '今週の状況・着地見込み・提出状況／勤務表を開く・翌月作成' },
+          { k: '状況確認', v: '今週の状況・着地見込み・提出状況／勤務表を開く・翌月作成・休暇予約' },
+        ]),
+        section('休暇の予約', [
+          '勤務表が未作成の月の休みは予約として保存され、その月の勤務表を作成したときに自動で反映されます。',
+          { k: '休暇予約', v: '予約の確認・取消・追加' },
         ]),
         section('打刻（メッセージ入力）', [
           { k: '1900', v: '退社' },

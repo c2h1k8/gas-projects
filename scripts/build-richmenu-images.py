@@ -51,6 +51,8 @@ ICON = {
     'calendar': _cal(),
     'calendar_x': _cal('<path d="M9.5 13.5l5 4.2M14.5 13.5l-5 4.2" stroke="#fff" stroke-width="2.9" stroke-linecap="round"/>'),
     'calendar_plus': _cal('<path d="M12 13.2v5M9.5 15.7h5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>'),
+    'calendar_check': _cal('<path d="M8.9 15.8l2.4 2.3 4.1-4.0" stroke="#fff" stroke-width="2.6" fill="none"'
+                           ' stroke-linecap="round" stroke-linejoin="round"/>'),
     'calendar_week': _cal('<rect x="6.4" y="13.8" width="11.2" height="4.2" rx="1.5"/>'),
     'trash': ('<path d="M9.5 2h5a1.2 1.2 0 0 1 1.2 1.2v1.3H8.3V3.2A1.2 1.2 0 0 1 9.5 2z"/>'
               '<rect x="2.9" y="5.1" width="18.2" height="3.7" rx="1.5"/>'
@@ -102,7 +104,7 @@ PAGES = {
         ('doc_check', 'teal', '提出状況', '提出済/未提出'),
         ('open', 'blue', '勤務表を開く', 'シート'),
         ('calendar_plus', 'green', '翌月作成', '勤務表'),
-        None,
+        ('calendar_check', 'orange', '休暇予約', '未作成月の休み'),
     ],
 }
 
