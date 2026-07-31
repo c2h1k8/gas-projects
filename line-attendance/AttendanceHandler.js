@@ -87,9 +87,10 @@ const MainProc = (function () {
    * @return 時間
    */
   const convertMinutes2Hour = (minutes) => {
-    const h = Math.trunc(minutes / 60);
-    const m = minutes % 60;
-    return `${h}:${String(m).padStart(2, "0")}`;
+    // 残業が所定に満たない場合はマイナスになるため、符号を分けてから桁を整える
+    const sign = minutes < 0 ? '-' : '';
+    const abs = Math.abs(minutes);
+    return `${sign}${Math.trunc(abs / 60)}:${String(abs % 60).padStart(2, "0")}`;
   }
 
   // ===== 履歴の保持管理 =====
@@ -508,6 +509,20 @@ const MainProc = (function () {
   };
 
   /**
+   * fromDateの翌日からtoDateまでの営業日数を数えます。
+   * @param fromDate 起点（この日は含まない）
+   * @param toDate 終点（この日を含む）
+   */
+  const countBizDaysAfter_ = (fromDate, toDate) => {
+    let count = 0;
+    const d = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate() + 1);
+    for (; d <= toDate; d.setDate(d.getDate() + 1)) {
+      if (DateUtils.isBizDate(d)) count++;
+    }
+    return count;
+  };
+
+  /**
    * 指定週（月〜金）の週次サマリー表示内容を組み立てます。
    * @param anchorDate 対象週に含まれる任意の日
    * @param throughDate 集計の打ち切り日（週の途中で参照する場合に指定）。
@@ -522,14 +537,22 @@ const MainProc = (function () {
     const week = computeRangeTotals(last, from, to);
     if (!week) return null;
     const month = getMonthSummaryData(last);
+    // メトリクスは今週の指標で揃え、当月の値は注記に回す（横並びは3つまでが収まりの上限）
     const metrics = [
       { label: '今週稼働', value: convertMinutes2Hour(week.total) },
       { label: '今週残業', value: convertMinutes2Hour(week.overtime), accent: true },
-      { label: '当月累計', value: month.total },
     ];
+    // 残りの営業日を所定労働で埋めた場合の週の着地見込み（週が終わっていれば出さない）
+    const remainingBizDays = countBizDaysAfter_(last, fri);
+    if (remainingBizDays > 0) {
+      metrics.push({
+        label: '今週見込み',
+        value: convertMinutes2Hour(week.total + remainingBizDays * STD_WORK_MIN),
+      });
+    }
     const note = month.forecast
-      ? `当月着地見込み ${month.forecast} ／ 残業 ${month.overtime}`
-      : `当月残業 ${month.overtime}`;
+      ? `当月 ${month.total} ／ 着地見込み ${month.forecast} ／ 残業 ${month.overtime}`
+      : `当月 ${month.total} ／ 残業 ${month.overtime}`;
     const subtitle = `${DateUtils.formatDate(from, 'M/d')}〜${DateUtils.formatDate(last, 'M/d')}`;
     // 再送要否の判定に使う表示内容のシグネチャ（内容が変われば再送）
     const signature = `${subtitle}|${JSON.stringify(metrics)}|${note}`;
