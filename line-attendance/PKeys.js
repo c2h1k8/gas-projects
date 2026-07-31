@@ -55,4 +55,6 @@ const PKeys = {
   PUNCH_LOG: 'PUNCH_LOG',
   /** 週次サマリー送信済みの週と内容シグネチャ（JSON Map: { 'yyyy-MM-dd'(週の月曜): signature }。内容が変われば再送） */
   WEEKLY_SUMMARY_SENT: 'WEEKLY_SUMMARY_SENT',
+  /** 勤務表が未作成の月に予約した休暇（JSON Map: { 'yyyy-MM-dd': 勤怠区分 }。勤務表作成時に反映して削除） */
+  LEAVE_RESERVATIONS: 'LEAVE_RESERVATIONS',
 };

@@ -154,6 +154,132 @@ const MainProc = (function () {
     }
   };
 
+  // ===== 休暇の予約（勤務表が未作成の月） =====
+
+  const getReservations = () => Props.getJson(PKeys.LEAVE_RESERVATIONS) || new Map();
+
+  const setReservations = (map) => Props.setJson(PKeys.LEAVE_RESERVATIONS, map);
+
+  /**
+   * 勤務表が無くても予約として受け付けられるかを判定します。
+   * 出勤は時刻の丸めも工数もシートの数式に依存するため対象外。休暇系は区分だけで完結する。
+   * @param date 対象日
+   * @param type 勤怠区分（updateTimeの加工前の値）
+   */
+  const canReserveLeave_ = (date, type) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return date > today && (isLeaveType(type) || type === TYPE.CLEAR);
+  };
+
+  /**
+   * 勤務表が未作成の月の休暇を予約として保存します。
+   * クリアは予約の取り消しとして扱う。
+   * @return 常にnull（シートには未反映のため打刻としては未確定）
+   */
+  const reserveLeave_ = (replyToken, date, type) => {
+    const key = DateUtils.formatDate(date, 'yyyy-MM-dd');
+    const dateLabel = DateUtils.formatDate(date, 'M/d(aaa)');
+    const reservations = getReservations();
+
+    if (type === TYPE.CLEAR) {
+      if (!reservations.delete(key)) {
+        LineManager.replyFlex(replyToken, '予約なし', FlexCards.result({
+          status: 'info', title: '予約はありません', subtitle: dateLabel,
+        }));
+        return null;
+      }
+      if (!_testMode) setReservations(reservations);
+      LineManager.replyFlex(replyToken, '予約を取り消しました', FlexCards.result({
+        status: 'ok', title: '予約を取り消しました', subtitle: dateLabel,
+      }));
+      return null;
+    }
+
+    reservations.set(key, type);
+    pruneOldEntries(reservations);
+    if (!_testMode) setReservations(reservations);
+    LineManager.replyFlex(replyToken, '予約しました', FlexCards.result({
+      status: 'ok',
+      title: `${type} を予約しました`,
+      subtitle: `${dateLabel}\n${DateUtils.formatDate(date, 'yyyy年M月')}の勤務表を作成したときに反映されます`,
+    }));
+    return null;
+  };
+
+  /**
+   * 予約済みの休暇を、新規作成した勤務表へ反映します。
+   * 反映した分は予約から取り除き、PUNCH_LOGへ登録済みとして記録する（未登録チェック・週完了判定と整合させる）。
+   * @param sheet 作成した勤務表のシート
+   * @param year 対象年
+   * @param monthIndex 対象月（0始まり）
+   * @return 反映件数
+   */
+  const applyReservations_ = (sheet, year, monthIndex) => {
+    const reservations = getReservations();
+    if (!reservations.size) return 0;
+    const prefix = DateUtils.formatDate(new Date(year, monthIndex, 1), 'yyyy-MM');
+    let applied = 0;
+    for (const [key, type] of [...reservations]) {
+      if (typeof key !== 'string' || key.slice(0, 7) !== prefix) continue;
+      const day = Number(key.slice(8, 10));
+      // 月末を超えるキーは行がずれるため無視（通常は発生しない）
+      if (new Date(year, monthIndex, day).getMonth() !== monthIndex) continue;
+      const rowNo = day + 12;
+      sheet.getRange(rowNo, COLUMN_META.TYPE.NO).setValue(type);
+      sheet.getRange(rowNo, COLUMN_META.START.NO).setValue('');
+      sheet.getRange(rowNo, COLUMN_META.END.NO).setValue('');
+      recordPunch(new Date(year, monthIndex, day), { type });
+      reservations.delete(key);
+      applied++;
+    }
+    if (applied) setReservations(reservations);
+    return applied;
+  };
+
+  /**
+   * 予約中の休暇一覧を表示します（月ごとに見出しを付け、日付単位で取消できる）。
+   * @param replyToken リプライトークン
+   * @param note 直前の操作結果（任意）
+   */
+  const displayReservations = (replyToken, note = '') => {
+    const reservations = getReservations();
+    if (pruneOldEntries(reservations)) setReservations(reservations);
+    const entries = [...reservations.keys()].sort().map((dateStr) => {
+      const date = Utilities.parseDate(dateStr, 'JST', 'yyyy-MM-dd');
+      return {
+        dateStr,
+        monthLabel: DateUtils.formatDate(date, 'yyyy年M月'),
+        label: DateUtils.formatDate(date, 'M/d(aaa)'),
+        type: reservations.get(dateStr),
+      };
+    });
+    const title = '休暇の予約';
+    LineManager.replyFlex(replyToken, title, FlexCards.reservations({
+      title,
+      note,
+      entries,
+      // 未来月の有給・代休はカレンダー登録の入口が無いため、この一覧から予約できるようにする
+      addTypes: [TYPE.HOLIDAY, TYPE.DAIKYU, TYPE.REST],
+    }));
+  };
+
+  /**
+   * 一覧からの予約取り消しです。
+   * @param data { date: 'yyyy-MM-dd' }
+   */
+  const executeCancelReservation = (replyToken, data) => {
+    const reservations = getReservations();
+    const type = reservations.get(data.date);
+    if (!reservations.delete(data.date)) {
+      displayReservations(replyToken, '対象の予約は既にありません');
+      return;
+    }
+    setReservations(reservations);
+    const label = DateUtils.formatDate(Utilities.parseDate(data.date, 'JST', 'yyyy-MM-dd'), 'M/d(aaa)');
+    displayReservations(replyToken, `${label} の${type}を取り消しました`);
+  };
+
   // ===== 提出済み月の編集ロック =====
 
   /**
@@ -230,17 +356,51 @@ const MainProc = (function () {
   }
 
   /**
+   * 月サマリーの集計範囲と表示要素を決めます。
+   * 合計・残業は実績なので、対象日が未来でも「今日」で打ち切る（未来行は勤務表に既定値が
+   * 入っており稼働として数えてしまうため）。見込みはシート側の月合計セル（未来行の予定込み）
+   * が元なので、実績がまだ無い未来月でも意味を持つ。
+   * @param date 対象日
+   * @return {{ through, showTotals, showForecast }} through=集計打ち切り日（未来月はnull）
+   */
+  const monthSummaryScope_ = (date) => {
+    const now = new Date();
+    const ym = DateUtils.formatDate(date, 'yyyyMM');
+    const nowYm = DateUtils.formatDate(now, 'yyyyMM');
+    if (ym > nowYm) {
+      // 未来月：実績が1件も無いので合計・残業は出さず、予定ベースの見込みだけ出す
+      return { through: null, showTotals: false, showForecast: true };
+    }
+    if (ym < nowYm) {
+      // 過去月：末日で確定しているため見込みは出さない
+      const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+      return { through: lastDay, showTotals: true, showForecast: false };
+    }
+    // 当月：今日で打ち切る。最終営業日以降は見込みを出さない
+    const lastBizDate = DateUtils.getBizDatePrev(new Date(now.getFullYear(), now.getMonth() + 1, 1), false);
+    return { through: now, showTotals: true, showForecast: now.getDate() < lastBizDate.getDate() };
+  };
+
+  /**
    * 指定日の月の集計データ（文字列）を返します。
-   * @return {{ total, overtime, forecast }} forecastはnull可
+   * 集計範囲はmonthSummaryScope_に従い、対象日ではなく今日を基準に打ち切る。
+   * @return {{ total, overtime, forecast }} いずれもnull可
    */
   const getMonthSummaryData = (date) => {
-    const { totalTime, workDays, diffTotal } = calculateTotalTime(getMainSheet(date), date);
-    // 最終営業日ではない場合、見込み時間を出す
-    const lastBizDate = DateUtils.getBizDatePrev(new Date(date.getFullYear(), date.getMonth() + 1, 1), false);
-    const showForecast = date.getDate() < lastBizDate.getDate();
+    const sheet = getMainSheet(date);
+    const { through, showTotals, showForecast } = monthSummaryScope_(date);
+    if (!showTotals) {
+      // 未来月は行を読まず、シートの月合計セル（予定込み）から見込みだけ組み立てる
+      return summaryData(sheet.getRange(RNG_TTL).getValue(), 0, null, showForecast);
+    }
+    const { totalTime, workDays, diffTotal } = calculateTotalTime(sheet, through);
     return summaryData(totalTime, workDays, diffTotal, showForecast);
   }
 
+  /**
+   * サマリーの表示文字列を組み立てます。
+   * @param diffTotal 実績の合計（分）。nullなら合計・残業を出さない（未来月）
+   */
   const summaryData = (totalTime, workDays, diffTotal, showForecast) => {
     let forecast = null;
     if (showForecast) {
@@ -248,6 +408,7 @@ const MainProc = (function () {
       const forecastMin = DateUtils.formatDate(totalTime, 'mm');
       forecast = `${forecastHour}:${forecastMin}`;
     }
+    if (diffTotal === null) return { total: null, overtime: null, forecast };
     const overtime = diffTotal - workDays * 8 * 60;
     return {
       total: convertMinutes2Hour(diffTotal),
@@ -267,8 +428,14 @@ const MainProc = (function () {
     return SpreadsheetApp.openById(id).getSheetByName(Props.getValue(PKeys.SHEET_NAME_MAIN));
   };
 
-  const calculateTotalTime = (sheet, date) => {
-    const values = sheet.getRange(13, COLUMN_META.DAY.NO, date.getDate(), COLUMN_META.DIFF.NO).getValues();
+  /**
+   * 月初〜打ち切り日の実績を集計します。
+   * @param sheet メインシート
+   * @param through 集計の打ち切り日。日付部分だけを見るため、未来日を渡すと未来行（既定で稼働）
+   *   まで数えてしまう。呼び出し側で今日または過去月の末日に丸めること。
+   */
+  const calculateTotalTime = (sheet, through) => {
+    const values = sheet.getRange(13, COLUMN_META.DAY.NO, through.getDate(), COLUMN_META.DIFF.NO).getValues();
 
     let workDays = 0;
     let diffTotal = 0;
@@ -550,9 +717,12 @@ const MainProc = (function () {
         value: convertMinutes2Hour(week.total + remainingBizDays * STD_WORK_MIN),
       });
     }
-    const note = month.forecast
-      ? `当月 ${month.total} ／ 着地見込み ${month.forecast} ／ 残業 ${month.overtime}`
-      : `当月 ${month.total} ／ 残業 ${month.overtime}`;
+    // 未来月は実績が無く合計・残業がnullになるため、出せる項目だけ並べる
+    const noteParts = [];
+    if (month.total) noteParts.push(`当月 ${month.total}`);
+    if (month.forecast) noteParts.push(`着地見込み ${month.forecast}`);
+    if (month.overtime) noteParts.push(`残業 ${month.overtime}`);
+    const note = noteParts.join(' ／ ');
     const subtitle = `${DateUtils.formatDate(from, 'M/d')}〜${DateUtils.formatDate(last, 'M/d')}`;
     // 再送要否の判定に使う表示内容のシグネチャ（内容が変われば再送）
     const signature = `${subtitle}|${JSON.stringify(metrics)}|${note}`;
@@ -873,7 +1043,7 @@ const MainProc = (function () {
    * @param start 出社時間
    * @param end 退社時間
    * @param reply 打刻カードを返信するか（呼び出し側で別のカードを返す場合はfalse）
-   * @return { kosu } 更新成功（kosuは退社確定時のみ）／中断した場合はnull
+   * @return { kosu } 更新成功（kosuは退社確定時のみ）／中断・予約として受け付けた場合はnull
    */
   const updateTime = (replyToken, {date, type, start, end }, { reply = true } = {}) => {
     // 提出済み月は編集不可（全ての登録経路がここを通る）
@@ -883,6 +1053,8 @@ const MainProc = (function () {
     // 勤務表取得
     const sheet = getMainSheet(date);
     if (!sheet) {
+      // 未来の休暇は勤務表が無くても予約として受け付ける（勤務表の作成時に反映）
+      if (canReserveLeave_(date, type)) return reserveLeave_(replyToken, date, type);
       postErrMsgFileNotFound(replyToken, date);
       return null;
     }
@@ -1039,9 +1211,13 @@ const MainProc = (function () {
         Logger.log('[TEST] makeWorkSchedule: 翌月ファイルの新規作成をスキップ');
         result = { status: 'info', title: '[テスト] 翌月ファイル作成をスキップ', subtitle: nextLabel };
       } else {
-        // 翌月ファイルを作成
-        copyFile(nextDate);
-        result = { status: 'ok', title: '翌月ファイルを作成しました', subtitle: nextLabel };
+        // 翌月ファイルを作成（予約していた休暇があれば反映される）
+        const applied = copyFile(nextDate);
+        result = {
+          status: 'ok',
+          title: '翌月ファイルを作成しました',
+          subtitle: applied ? `${nextLabel}\n予約していた休暇 ${applied}件を反映しました` : nextLabel,
+        };
       }
 
       LineManager.replyFlex(replyToken, result.title, FlexCards.result(result));
@@ -1234,7 +1410,10 @@ const MainProc = (function () {
       // セルをクリア
       sheet.getRange(rowNo, COLUMN_META.TYPE.NO, 1, 10).clearContent();
     }
+    // 勤務表が無い状態で登録された休暇の予約を反映（既定値を書いたあとに上書きする）
+    const applied = applyReservations_(sheet, year, nextMonthIndex);
     Props.setJsonEntry(PKeys.FILE_MAP, DateUtils.formatDate(new Date(year, nextMonthIndex, 1), 'yyyyMM'), file.id);
+    return applied;
   }
 
   /**
@@ -1470,6 +1649,14 @@ const MainProc = (function () {
         case 'make-schedule':
           // 翌月勤務表の作成
           makeWorkSchedule(replyToken);
+          break;
+        case 'reservations':
+          // 休暇の予約一覧
+          displayReservations(replyToken);
+          break;
+        case 'cancel-reservation':
+          // 一覧からの予約取り消し
+          executeCancelReservation(replyToken, data);
           break;
         case 'list':
           // 稼働表示
