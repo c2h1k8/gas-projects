@@ -35,8 +35,6 @@ const PKeys = {
   ADDRESS_FROM: 'ADDRESS_FROM',
   /** 勤務表送信先 */
   ADDRESS_TO: 'ADDRESS_TO',
-  /** 勤怠連絡送信先 */
-  ADDRESS_TO_FOR_REST: 'ADDRESS_TO_FOR_REST',
   /** 会社名 */
   COMPANY_NAME: 'COMPANY_NAME',
   /** 会社郵便番号 */
@@ -55,8 +53,6 @@ const PKeys = {
 
   /** 勤怠開始/終了のLINE登録履歴（JSON Map: { 'yyyy-MM-dd': { start: bool, end: bool } }） */
   PUNCH_LOG: 'PUNCH_LOG',
-  /** 勤怠連絡の送信履歴（JSON Map: { 'yyyy-MM-dd': [カテゴリ...] }） */
-  SENT_CONTACTS: 'SENT_CONTACTS',
   /** 週次サマリー送信済みの週と内容シグネチャ（JSON Map: { 'yyyy-MM-dd'(週の月曜): signature }。内容が変われば再送） */
   WEEKLY_SUMMARY_SENT: 'WEEKLY_SUMMARY_SENT',
 };

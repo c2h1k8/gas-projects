@@ -12,8 +12,9 @@
  *
  * ページ構成:
  *   A=登録（する）  : 出社/退社/欠勤、カレンダー出勤/欠勤/クリア
- *   B=連絡・提出（送る）: 当月稼働/先月稼働/推移、欠勤連絡/提出/ヘルプ
- *   C=状況確認（見る）: 連絡状況/勤怠チェック/提出状況、着地見込み/勤務表を開く/翌月作成
+ *   B=稼働・提出（送る）: 当月稼働/先月稼働/推移、未登録/提出/ヘルプ
+ *   C=状況確認（見る）: 今週の状況/着地見込み/提出状況、勤務表を開く/翌月作成/(空き)
+ *      上段＝いまの状況（今週→当月→提出）、下段＝道具
  */
 
 // Driveに置くリッチメニュー画像のファイル名（一意にしておくこと）
@@ -41,7 +42,7 @@ const RICHMENU_A = {
     { bounds: { x: 0, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"start"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 400, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"end"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 800, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"break"}', inputOption: 'closeRichMenu' } },
-    { bounds: { x: 0, y: 471, width: 400, height: 339 }, action: { type: 'datetimepicker', data: '{"action":"calendar","type":"出勤"}', mode: 'datetime', inputOption: 'closeRichMenu' } },
+    { bounds: { x: 0, y: 471, width: 400, height: 339 }, action: { type: 'datetimepicker', data: '{"action":"calendar","type":"出勤"}', mode: 'date', inputOption: 'closeRichMenu' } },
     { bounds: { x: 400, y: 471, width: 400, height: 339 }, action: { type: 'datetimepicker', data: '{"action":"calendar","type":"欠勤"}', mode: 'date', inputOption: 'closeRichMenu' } },
     { bounds: { x: 800, y: 471, width: 400, height: 339 }, action: { type: 'datetimepicker', data: '{"action":"calendar","type":"クリア"}', mode: 'date', inputOption: 'closeRichMenu' } },
   ],
@@ -57,7 +58,7 @@ const RICHMENU_B = {
     { bounds: { x: 0, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"list","month":""}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 400, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"list","month":"1"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 800, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"history"}', inputOption: 'closeRichMenu' } },
-    { bounds: { x: 0, y: 471, width: 400, height: 339 }, action: { type: 'datetimepicker', data: '{"action":"absence-mail"}', mode: 'date', inputOption: 'closeRichMenu' } },
+    { bounds: { x: 0, y: 471, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"unregistered"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 400, y: 471, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"handin"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 800, y: 471, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"help"}', inputOption: 'closeRichMenu' } },
   ],
@@ -70,12 +71,12 @@ const RICHMENU_C = {
   chatBarText: 'メニュー',
   areas: [
     ...RICHMENU_TAB_AREAS,
-    { bounds: { x: 0, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"contact-status"}', inputOption: 'closeRichMenu' } },
-    { bounds: { x: 400, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"contact-check"}', inputOption: 'closeRichMenu' } },
+    { bounds: { x: 0, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"weekly"}', inputOption: 'closeRichMenu' } },
+    { bounds: { x: 400, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"forecast"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 800, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"submit-status"}', inputOption: 'closeRichMenu' } },
-    { bounds: { x: 0, y: 471, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"forecast"}', inputOption: 'closeRichMenu' } },
-    { bounds: { x: 400, y: 471, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"workbook"}', inputOption: 'closeRichMenu' } },
-    { bounds: { x: 800, y: 471, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"make-schedule"}', inputOption: 'closeRichMenu' } },
+    { bounds: { x: 0, y: 471, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"workbook"}', inputOption: 'closeRichMenu' } },
+    { bounds: { x: 400, y: 471, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"make-schedule"}', inputOption: 'closeRichMenu' } },
+    // TODO: x=800,y=471 は空き。新機能ができたら割り当てる（画像も差し替えること）
   ],
 };
 

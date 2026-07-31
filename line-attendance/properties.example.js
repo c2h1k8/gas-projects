@@ -10,7 +10,6 @@ function setScriptProps() {
     [PKeys.TEMPLATE_FILE_ID]: 'YOUR_TEMPLATE_FILE_ID',
     [PKeys.ADDRESS_FROM]: 'YOUR_ADDRESS_FROM',
     [PKeys.ADDRESS_TO]: JSON.stringify(['YOUR_ADDRESS_TO']),
-    [PKeys.ADDRESS_TO_FOR_REST]: JSON.stringify(['YOUR_ADDRESS_TO_FOR_REST']),
     [PKeys.NAME_LAST]: 'YOUR_NAME_LAST',
     [PKeys.NAME_FIRST]: 'YOUR_NAME_FIRST',
     [PKeys.NAME_ALPHA]: 'YOUR_NAME_ALPHA',
