@@ -1043,7 +1043,8 @@ const MainProc = (function () {
    * @param start 出社時間
    * @param end 退社時間
    * @param reply 打刻カードを返信するか（呼び出し側で別のカードを返す場合はfalse）
-   * @return { kosu } 更新成功（kosuは退社確定時のみ）／中断・予約として受け付けた場合はnull
+   * @return { kosu, punchCard } 更新成功（kosuは退社確定時のみ／punchCardは{ altText, contents }）
+   *         ／中断・予約として受け付けた場合はnull
    */
   const updateTime = (replyToken, {date, type, start, end }, { reply = true } = {}) => {
     // 提出済み月は編集不可（全ての登録経路がここを通る）
@@ -1105,16 +1106,20 @@ const MainProc = (function () {
     const kosu = (isWorking && shouldUpdEnd)
       ? convertMinutes2Hour(convertHour2Minutes(getTime(sheet.getRange(rowNo, COLUMN_META.DIFF.NO).getValue())))
       : '';
-    if (reply) {
-      const card = FlexCards.punch({
+    // 打刻カードは常に組み立てる（reply=falseの呼び出し元は自前のカードと並べて返すため）
+    const punchCard = {
+      altText: `${cardType} 登録`,
+      contents: FlexCards.punch({
         dateLabel: DateUtils.formatDate(date, 'M/d(aaa)'),
         type: cardType,
         start: isWorking ? start : '',
         end: (isWorking && shouldUpdEnd) ? end : '',
         kosu,
         summary: shouldUpdEnd ? getMonthSummaryData(date) : null,
-      });
-      LineManager.replyFlex(replyToken, `${cardType} 登録`, card);
+      }),
+    };
+    if (reply) {
+      LineManager.replyFlex(replyToken, punchCard.altText, punchCard.contents);
     }
 
     // 勤怠のLINE登録履歴を記録（連絡漏れ監視・週完了判定で使用）
@@ -1128,7 +1133,7 @@ const MainProc = (function () {
 
     // その週（月〜金）の勤怠がすべて登録され切ったら、週次サマリーを自動送信（週1回）
     maybeNotifyWeeklyComplete(date);
-    return { kosu };
+    return { kosu, punchCard };
   }
 
   /**
@@ -1489,37 +1494,58 @@ const MainProc = (function () {
   };
 
   /**
-   * 指定日1日分の時刻入力カードを表示します（カレンダー登録の出勤で使用）。
-   * @param replyToken リプライトークン
+   * 指定日1日分の時刻入力カードを組み立てます。
+   * @param replyToken リプライトークン（表示できない場合の理由返信に使用）
    * @param dateStr 対象日 'yyyy-MM-dd'
-   * @param note 直前の登録結果（任意）
+   * @return { altText, contents } / 表示できない場合はnull（理由は返信済み）
    */
-  const displayDayPunch = (replyToken, dateStr, note = '') => {
+  const buildDayPunchCard_ = (replyToken, dateStr) => {
     const date = Utilities.parseDate(dateStr, 'JST', 'yyyy-MM-dd');
-    if (replySubmittedLock_(replyToken, date)) return;
+    if (replySubmittedLock_(replyToken, date)) return null;
     const sheet = getMainSheet(date);
     if (!sheet) {
       postErrMsgFileNotFound(replyToken, date);
-      return;
+      return null;
     }
     const row = sheet.getRange(date.getDate() + 12, COLUMN_META.DAY.NO, 1, COLUMN_META.DIFF.NO).getValues()[0];
     const punch = getPunchLog().get(dateStr) || { start: false, end: false };
     const entry = buildPunchEntry_(date, row, punch);
     const title = `${entry.label} の勤怠`;
-    LineManager.replyFlex(replyToken, title, FlexCards.unregistered({
-      title,
-      note,
-      entries: [entry],
-      single: true,
-    }));
+    return {
+      altText: title,
+      contents: FlexCards.unregistered({ title, entries: [entry], single: true }),
+    };
+  };
+
+  /**
+   * 未登録一覧カードを組み立てます。
+   * @param entries 未登録エントリ（1件以上）
+   * @return { altText, contents }
+   */
+  const buildUnregisteredCard_ = (entries) => ({
+    altText: '未登録の勤怠',
+    contents: FlexCards.unregistered({
+      title: '未登録の勤怠',
+      subtitle: `${DateUtils.formatDate(new Date(), 'yyyy年M月')} ・ 残り ${entries.length}件`,
+      entries,
+    }),
+  });
+
+  /**
+   * 指定日1日分の時刻入力カードを表示します（カレンダー登録の出勤で使用）。
+   * @param replyToken リプライトークン
+   * @param dateStr 対象日 'yyyy-MM-dd'
+   */
+  const displayDayPunch = (replyToken, dateStr) => {
+    const card = buildDayPunchCard_(replyToken, dateStr);
+    if (card) LineManager.replyFlex(replyToken, card.altText, card.contents);
   };
 
   /**
    * 当月の未登録一覧を表示します（出社/退社を個別に入力できるカード）。
    * @param replyToken リプライトークン
-   * @param note 直前の登録結果（任意）
    */
-  const displayUnregistered = (replyToken, note = '') => {
+  const displayUnregistered = (replyToken) => {
     const now = new Date();
     const entries = collectUnregistered_();
     if (entries === null) {
@@ -1527,23 +1553,21 @@ const MainProc = (function () {
       return;
     }
     if (!entries.length) {
-      const result = note
-        ? { status: 'ok', title: note, subtitle: '未登録はありません' }
-        : { status: 'ok', title: '未登録はありません', subtitle: `${DateUtils.formatDate(now, 'yyyy年M月')} 時点` };
-      LineManager.replyFlex(replyToken, '未登録の勤怠', FlexCards.result(result));
+      LineManager.replyFlex(replyToken, '未登録の勤怠', FlexCards.result({
+        status: 'ok',
+        title: '未登録はありません',
+        subtitle: `${DateUtils.formatDate(now, 'yyyy年M月')} 時点`,
+      }));
       return;
     }
-    LineManager.replyFlex(replyToken, '未登録の勤怠', FlexCards.unregistered({
-      title: '未登録の勤怠',
-      subtitle: DateUtils.formatDate(now, 'yyyy年M月'),
-      note,
-      entries,
-    }));
+    const card = buildUnregisteredCard_(entries);
+    LineManager.replyFlex(replyToken, card.altText, card.contents);
   };
 
   /**
-   * 未登録一覧から出社/退社の時刻を登録し、更新後の一覧を返します。
+   * 未登録一覧から出社/退社の時刻を登録します。
    * 選んだ側だけを更新し、もう一方は現状を維持します。
+   * 返信は通常登録と同じ打刻カードを先頭に置き、続けて入力できるよう呼び出し元のカードを添えます。
    * @param replyToken リプライトークン
    * @param data { date: 'yyyy-MM-dd', field: 'start' | 'end', single: 1日カードから呼ばれたか }
    * @param params 時刻選択の結果（{ time: 'HH:mm' }）
@@ -1560,16 +1584,17 @@ const MainProc = (function () {
     }, { reply: false });
     // 中断時はupdateTimeが理由を返信済み
     if (!updated) return;
-    // 続けて入力できるよう、打刻カードではなく呼び出し元のカードを返す。
-    // 打刻カードが出ないぶん、確定した工数は結果の一文に添える。
-    const label = DateUtils.formatDate(date, 'M/d(aaa)');
-    let note = `${label} ${isStart ? '出社' : '退社'} ${params.time} を登録しました`;
-    if (updated.kosu) note += `　工数 ${updated.kosu}`;
+
+    // 1日カードは時刻の修正にも使うため常に添える。
+    // 一覧は残りが無くなったら省略し、打刻カードだけで完結させる。
+    let followUp = null;
     if (data.single) {
-      displayDayPunch(replyToken, data.date, note);
-      return;
+      followUp = buildDayPunchCard_(replyToken, data.date);
+    } else {
+      const entries = collectUnregistered_();
+      if (entries && entries.length) followUp = buildUnregisteredCard_(entries);
     }
-    displayUnregistered(replyToken, note);
+    LineManager.replyFlexMulti(replyToken, [updated.punchCard, followUp]);
   };
 
   /**

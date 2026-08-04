@@ -38,6 +38,23 @@ const LineManager = (function () {
         LineUtil.postFlex(getToken(), getUserId(), altText, contents);
       }
     },
+    /**
+     * 複数のFlexカードをまとめて返信します（最大5通）。
+     * @param cards [{ altText, contents }]（null/undefinedの要素は無視）
+     */
+    replyFlexMulti: function(replyToken, cards) {
+      const list = (cards || []).filter((c) => c && c.contents);
+      if (!list.length) return;
+      if (list.length === 1) {
+        this.replyFlex(replyToken, list[0].altText, list[0].contents);
+        return;
+      }
+      if (replyToken) {
+        LineUtil.replyFlexMulti(getToken(), replyToken, list);
+      } else {
+        LineUtil.postFlexMulti(getToken(), getUserId(), list);
+      }
+    },
     getBeginnerMark: function() {
       return LineUtil.getEmojiJson('5ac21a18040ab15980c9b43e', '018');
     },

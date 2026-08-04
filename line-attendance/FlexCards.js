@@ -266,12 +266,11 @@ const FlexCards = (() => {
     /**
      * 未登録一覧カード（日ごとに出社/退社を個別入力するボタン付き）。
      * ボタンは時刻ピッカーを直接開き、初期値には現在の勤務表の値を使う。
-     * @param {{title, subtitle, note, entries, single}} p
+     * @param {{title, subtitle, entries, single}} p
      *   entries: [{ dateStr, label, start, end, needStart, needEnd }]
-     *   note: 直前の登録結果（省略可）
      *   single: 1日単位のカード（登録後も同じ1日カードへ戻る）
      */
-    unregistered: ({ title, subtitle, note, entries, single }) => {
+    unregistered: ({ title, subtitle, entries, single }) => {
       // 未登録の側は強調、登録済みの側は現在時刻をラベルにした控えめな見た目にする
       const pickerButton = (dateStr, field, label, time, need) => {
         const data = { action: 'fill-punch', date: dateStr, field };
@@ -294,7 +293,6 @@ const FlexCards = (() => {
       };
 
       const body = [];
-      if (note) body.push(text(note, { size: 'xs', color: GRAY, align: 'center', wrap: true }));
       if (subtitle) body.push(text(subtitle, { size: 'sm', color: GRAY, align: 'center' }));
       body.push(sep());
       entries.forEach((e, i) => {
