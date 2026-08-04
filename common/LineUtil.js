@@ -1,5 +1,7 @@
 const LineUtil = (function () {
   const IMAGE_BACKGROUND_COLOR = '#ffffff';
+  // 1回のreply/pushで送れるメッセージ数の上限（LINE Messaging APIの仕様）
+  const MAX_REPLY_MESSAGES = 5;
 
   /**
    * テキストメッセージを送信します。
@@ -357,20 +359,47 @@ const LineUtil = (function () {
     return push(token, userId, getFlexData(altText, contents));
   }
   /**
+   * 複数のFlexメッセージをまとめて送信します（リプライ）。
+   * 1つのリプライトークンで最大5通まで送れる。
+   * @param token チャネルトークン
+   * @param replyToken リプライトークン
+   * @param cards [{ altText, contents }]
+   * @return HTTPレスポンスデータ
+   */
+  function replyFlexMulti(token, replyToken, cards) {
+    return reply(token, replyToken, getFlexMultiData(cards));
+  }
+  /**
+   * 複数のFlexメッセージをまとめて送信します（プッシュ）。
+   * @param token チャネルトークン
+   * @param userId ユーザID
+   * @param cards [{ altText, contents }]
+   * @return HTTPレスポンスデータ
+   */
+  function postFlexMulti(token, userId, cards) {
+    return push(token, userId, getFlexMultiData(cards));
+  }
+  /**
    * 送信するFlexメッセージデータを生成します。
    * @param altText 代替テキスト
    * @param contents Flexコンテンツ
    * @return メッセージデータ
    */
   function getFlexData(altText, contents) {
+    return getFlexMultiData([{ altText, contents }]);
+  }
+  /**
+   * 送信する複数Flexメッセージデータを生成します。
+   * @param cards [{ altText, contents }]
+   * @return メッセージデータ
+   */
+  function getFlexMultiData(cards) {
     return {
-      'messages': [
-        {
-          'type': 'flex',
-          'altText': altText,
-          'contents': contents,
-        }
-      ]
+      'messages': (cards || []).slice(0, MAX_REPLY_MESSAGES).map((c) => ({
+        'type': 'flex',
+        'altText': c.altText,
+        'contents': c.contents,
+      })),
     };
   }
   /**
@@ -587,6 +616,9 @@ const LineUtil = (function () {
     replyFlex,
     postFlex,
     getFlexData,
+    replyFlexMulti,
+    postFlexMulti,
+    getFlexMultiData,
     makePostbackAction,
     getFlexButtonGrid,
     getRichMenuList,
