@@ -51,11 +51,12 @@ const FlexCards = (() => {
   return {
     /**
      * 打刻結果カード。
-     * @param {{dateLabel, type, start, end, kosu, summary, note}} p
+     * @param {{dateLabel, type, start, end, rest, kosu, summary, note}} p
+     *   rest: 休憩時間。工数の内訳として添える。null可。
      *   summary: { total, overtime, forecast } いずれも文字列でnull可（nullの項目は出さない）。summary自体null可。
      *   note: 末尾に添える補足（有休残など）。null可。
      */
-    punch: ({ dateLabel, type, start, end, kosu, summary, note }) => {
+    punch: ({ dateLabel, type, start, end, rest, kosu, summary, note }) => {
       const c = colorOf(type);
       const body = [];
 
@@ -75,6 +76,10 @@ const FlexCards = (() => {
             text(kosu, { size: '3xl', weight: 'bold', color: c, align: 'center' }),
           ],
         });
+      }
+      // 休憩は工数の差し引き分なので、工数のすぐ下に内訳として置く
+      if (rest) {
+        body.push(text(`休憩 ${rest}`, { size: 'xs', color: GRAY, align: 'center' }));
       }
       if (!times.length && !kosu) {
         body.push(text('登録しました', { size: 'md', color: DARK, align: 'center' }));
@@ -271,8 +276,9 @@ const FlexCards = (() => {
     /**
      * 未登録一覧カード（日ごとに出社/退社を個別入力するボタン付き）。
      * ボタンは時刻ピッカーを直接開き、初期値には現在の勤務表の値を使う。
+     * 休憩の変更は1日カードでのみ出す（一覧は出社/退社の未登録を片付ける場なので）。
      * @param {{title, subtitle, entries, single}} p
-     *   entries: [{ dateStr, label, start, end, needStart, needEnd }]
+     *   entries: [{ dateStr, label, start, end, rest, needStart, needEnd }]
      *   single: 1日単位のカード（登録後も同じ1日カードへ戻る）
      */
     unregistered: ({ title, subtitle, entries, single }) => {
@@ -317,6 +323,13 @@ const FlexCards = (() => {
             pickerButton(e.dateStr, 'end', '退社', e.end, e.needEnd),
           ],
         });
+        // 休憩は既定値が入っているので「未入力」にはならない。変えたいときだけ触る想定。
+        if (single) {
+          body.push({
+            type: 'box', layout: 'horizontal', margin: 'sm',
+            contents: [pickerButton(e.dateStr, 'rest', '休憩', e.rest, false)],
+          });
+        }
       });
       return shell(WARN, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
     },
@@ -444,6 +457,13 @@ const FlexCards = (() => {
           typeLine,
           { k: 'h', v: '有給休暇として当日登録' },
           { k: 'w 1930', v: '休日出勤（退社1930）' },
+        ]),
+        section('休憩時間', [
+          '勤務表には既定で1:00が入っています。休憩を取らなかった日は0を指定してください。1日カードの「休憩」ボタンからも変更できます。',
+          { k: 'k 0', v: '当日の休憩をなしに' },
+          { k: 'k 30', v: '当日の休憩を30分に（数字は分）' },
+          { k: 'k 1:00', v: '時:分でも指定できる' },
+          { k: 'k 1日 45', v: '日付を指定（k 1th 45 も可）' },
         ]),
         section('稼働一覧', [
           { k: 'リスト', v: '当月' },

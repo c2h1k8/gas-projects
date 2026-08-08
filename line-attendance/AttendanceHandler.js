@@ -5,7 +5,12 @@ const MainProc = (function () {
     START: { NO: 9, IDX: 8 },
     END: { NO: 12, IDX: 11 },
     DIFF: { NO: 30, IDX: 29 },
+    // 休憩時間（AJ列）。既定で1:00が入っており、実働(DIFF)はこの値を引いた結果になる。
+    // 8時間未満の稼働で休憩を取らなかった日はここを0:00にする。
+    BREAK: { NO: 36, IDX: 35 },
   }
+  // 休憩時間まで含めて1行を読むときの列数（DIFFまでで足りる箇所は従来どおり）
+  const ROW_WIDTH = COLUMN_META.BREAK.NO;
   const RNG_TTL = 'AD44';
   const TYPE = {
     WORKING: '出勤',
@@ -225,9 +230,9 @@ const MainProc = (function () {
    */
   const applyReservations_ = (sheet, year, monthIndex) => {
     const reservations = getReservations();
-    if (!reservations.size) return 0;
+    if (!reservations.size) return [];
     const prefix = DateUtils.formatDate(new Date(year, monthIndex, 1), 'yyyy-MM');
-    let applied = 0;
+    const applied = [];
     for (const [key, type] of [...reservations]) {
       if (typeof key !== 'string' || key.slice(0, 7) !== prefix) continue;
       const day = Number(key.slice(8, 10));
@@ -239,9 +244,9 @@ const MainProc = (function () {
       sheet.getRange(rowNo, COLUMN_META.END.NO).setValue('');
       recordPunch(new Date(year, monthIndex, day), { type });
       reservations.delete(key);
-      applied++;
+      applied.push(key);
     }
-    if (applied) setReservations(reservations);
+    if (applied.length) setReservations(reservations);
     return applied;
   };
 
@@ -1146,6 +1151,10 @@ const MainProc = (function () {
     // 退社: -> 19:20 -> 当日 19:20退社
     // 勤怠区分: -> 有給 -> 有給休暇
     const splitWords = text.split(' ');
+    // 休憩時間の指定（k 30 / k 0:30 / k 1th 30）。区分の変更は伴わないため先に処理する。
+    if (splitWords[0] === 'k') {
+      return getRestInfo(replyToken, splitWords.slice(1));
+    }
     // 勤怠区分取得
     let type = TYPE.WORKING;
     if (splitWords[0].match(/^[r|h|d|w|c]$/)) {
@@ -1206,6 +1215,58 @@ const MainProc = (function () {
     }
     LineManager.replyFlex(replyToken, '取得失敗', FlexCards.result({ status: 'ng', title: '勤怠情報が取得できませんでした', subtitle: '「使い方」で入力例を確認できます' }));
   }
+
+  /**
+   * 休憩時間の指定を解釈します（`k` コマンド）。
+   *
+   * 休憩は「何時何分に」ではなく「何分間」なので、出退勤の時刻とは書式を分けています。
+   * 数字だけなら分、コロン付きなら時:分として読みます。
+   *   k 30      → 当日の休憩を30分に
+   *   k 0       → 当日の休憩をなしに
+   *   k 1:00    → 当日の休憩を1時間に
+   *   k 1th 30  → 1日の休憩を30分に
+   *
+   * @param words `k` を除いた残りの語
+   * @return { date, type, start, end, rest } / 解釈できなければnull（理由は返信済み）
+   */
+  const getRestInfo = (replyToken, words) => {
+    if (!words.length || words.length > 2) {
+      LineManager.replyFlex(replyToken, '取得失敗', FlexCards.result({
+        status: 'ng', title: '休憩時間が取得できませんでした', subtitle: '例: k 30 / k 0 / k 1th 45',
+      }));
+      return null;
+    }
+    const date = words.length === 2 ? getDate(words[0]) : new Date();
+    const rest = parseDuration(words[words.length - 1]);
+    if (rest === null) {
+      LineManager.replyFlex(replyToken, '取得失敗', FlexCards.result({
+        status: 'ng', title: '休憩時間が取得できませんでした', subtitle: '分または時:分で指定してください（例: 30 / 1:00）',
+      }));
+      return null;
+    }
+    // 区分と時刻は現状維持。休憩だけを差し替える。
+    return { date, type: TYPE.WORKING, start: '-', end: '-', rest };
+  };
+
+  /**
+   * 時間の長さを 'HH:mm' に変換します。
+   * @param text '30'（分）または '1:00' / '0:45'（時:分）
+   * @return 'HH:mm' / 解釈できなければnull
+   */
+  const parseDuration = (text) => {
+    const value = String(text).trim();
+    if (/^\d{1,2}:\d{1,2}$/.test(value)) {
+      const [h, m] = value.split(':').map(Number);
+      if (m > 59) return null;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    if (/^\d{1,3}$/.test(value)) {
+      const total = Number(value);
+      if (total > 24 * 60) return null;
+      return `${String(Math.trunc(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+    }
+    return null;
+  };
 
   /**
    * 日付を取得します。
@@ -1288,17 +1349,99 @@ const MainProc = (function () {
   }
 
   /**
+   * 登録した勤怠を1日分書き出します。
+   * 書き出しの失敗で勤務表への登録を失敗させないため、例外は外に出しません。
+   *
+   * 勤怠のLINE登録履歴（PUNCH_LOG）を見て判断するので、
+   * この関数より前に recordPunch / clearPunch を済ませておくこと。
+   *
+   * @param date 対象日
+   * @param type 勤怠区分（クリアは空文字）
+   * @return 打刻カードに添える文言（成功・対象外ならnull）
+   */
+  const exportRow_ = (date, type) => {
+    if (_testMode) return null;
+    if (!AttendanceExport.isConfigured()) return null;
+    const dateStr = DateUtils.formatDate(date, 'yyyy-MM-dd');
+    try {
+      // クリアは登録の取り消しなので、書き出し済みなら取り下げる。
+      // 残したままだと取り込み側が取り消したはずの勤怠を登録してしまう。
+      if (!AttendanceExport.isExportTarget(type)) {
+        AttendanceExport.remove(dateStr);
+        return null;
+      }
+      const row = buildExportRow_(date, type);
+      if (!row) return null;
+      AttendanceExport.write(row);
+      return null;
+    } catch (e) {
+      Logger.log('[exportRow_] %s の書き出しに失敗: %s', dateStr, e.message);
+      return `⚠️ 勤怠データを書き出せませんでした: ${e.message}`;
+    }
+  };
+
+  /**
+   * 書き出す1件分を組み立てます。
+   * 勤務表のレイアウトを知っているのはこのモジュールだけなので、
+   * 時刻や振替元の解決はここで済ませ、解決済みの値だけを渡します。
+   * @param date 対象日
+   * @param type 勤怠区分
+   * @return 書き出す1件 / 対象外ならnull
+   */
+  const buildExportRow_ = (date, type) => {
+    const day = readDay_(date);
+    if (!day) return null;
+    const row = {
+      work_date: day.dateStr,
+      type: type,
+      start: '',
+      end: '',
+      work_time: '',
+      holiday_work_date: '',
+    };
+    if (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING) {
+      // 勤務表は営業日に既定の時刻が入っているため、シートを見ても退社登録の有無は分からない。
+      // 実際に退社を登録したかはLINE登録履歴で判断する。
+      const punch = getPunchLog().get(day.dateStr);
+      if (!punch || !punch.end) return null;
+      row.start = day.start;
+      row.end = day.end;
+      row.work_time = day.diff;
+      return row;
+    }
+    if (type === TYPE.DAIKYU) {
+      // 代休は振替元の休日出勤日とセットでないと意味が取れないため、勤務表から遡って引き当てる。
+      // 引き当てできなければ行は書かず、LINEで理由を伝える。
+      const substitute = findRecentHolidayWork_(date, exportedSubstitutes_());
+      if (!substitute) {
+        throw new Error('振替元の休日出勤日が勤務表から見つかりません。');
+      }
+      row.holiday_work_date = substitute;
+    }
+    return row;
+  };
+
+  /**
+   * 書き出し済みの中で既に他の代休へ割り当てた休日出勤日を集めます。
+   * 同じ休日出勤日を複数の代休に使い回さないための重複排除。
+   */
+  const exportedSubstitutes_ = () => AttendanceExport.list()
+    .map((r) => r.holiday_work_date)
+    .filter((v) => v);
+
+  /**
    * 勤務時間を更新します。
    * @param replyToken リプライトークン
    * @param date 日付
    * @param type 勤怠区分
    * @param start 出社時間
    * @param end 退社時間
+   * @param rest 休憩時間（'-'なら現状維持。'00:00'で休憩なし）
    * @param reply 打刻カードを返信するか（呼び出し側で別のカードを返す場合はfalse）
    * @return { kosu, punchCard } 更新成功（kosuは退社確定時のみ／punchCardは{ altText, contents }）
    *         ／中断・予約として受け付けた場合はnull
    */
-  const updateTime = (replyToken, {date, type, start, end }, { reply = true } = {}) => {
+  const updateTime = (replyToken, {date, type, start, end, rest = '-' }, { reply = true } = {}) => {
     // 提出済み月は編集不可（全ての登録経路がここを通る）
     if (replySubmittedLock_(replyToken, date)) return null;
     // LINEからの開始登録有無（シート反映前に判定）
@@ -1345,21 +1488,44 @@ const MainProc = (function () {
       if (start === '-') start = getTime(cols[0]);
       if (!shouldUpdEnd) end = getTime(cols[width - 1]);
     }
+    // 休憩時間は指定されたときだけ書く（既定値1:00をむやみに上書きしないため）
+    const shouldUpdRest = rest !== '-';
     if (_testMode) {
-      Logger.log(`[TEST] updateTime: row=${rowNo}, type=${type}, start=${start}, end=${end}`);
+      Logger.log(`[TEST] updateTime: row=${rowNo}, type=${type}, start=${start}, end=${end}`
+        + (shouldUpdRest ? `, rest=${rest}` : ''));
     } else {
       sheet.getRange(rowNo, COLUMN_META.TYPE.NO).setValue(type);
       sheet.getRange(rowNo, COLUMN_META.START.NO).setValue(start);
       sheet.getRange(rowNo, COLUMN_META.END.NO).setValue(end);
+      if (shouldUpdRest) sheet.getRange(rowNo, COLUMN_META.BREAK.NO).setValue(rest);
     }
     // 有休台帳へ反映（有給なら消化、他の区分・クリアなら消化を戻す）
     const ledger = recordPaidLeave_(type, date);
     const cardType = type || TYPE.CLEAR;
     const isWorking = (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING);
-    // 退社まで入った稼働日のみ工数が確定する
-    const kosu = (isWorking && shouldUpdEnd)
-      ? convertMinutes2Hour(convertHour2Minutes(getTime(sheet.getRange(rowNo, COLUMN_META.DIFF.NO).getValue())))
-      : '';
+
+    // 勤怠のLINE登録履歴を記録（連絡漏れ監視・週完了判定・書き出し判定で使用）。
+    // 書き出しがこの履歴を見て判断するため、書き出しより先に更新する。
+    if (isWorking) {
+      recordPunch(date, { start: startProvided, end: shouldUpdEnd, type });
+    } else if (isLeaveType(type)) {
+      recordPunch(date, { type });
+    } else if (cardType === TYPE.CLEAR) {
+      clearPunch(date);
+    }
+
+    // 退社まで入った稼働日のみ工数が確定する。
+    // 休憩は工数の差し引き分なので、同じ範囲から一緒に読んでカードに添える。
+    let kosu = '';
+    let restNow = shouldUpdRest ? rest : '';
+    if (isWorking && shouldUpdEnd) {
+      const from = COLUMN_META.DIFF.NO;
+      const cols = sheet.getRange(rowNo, from, 1, COLUMN_META.BREAK.NO - from + 1).getValues()[0];
+      kosu = convertMinutes2Hour(convertHour2Minutes(getTime(cols[0])));
+      restNow = getTime(cols[COLUMN_META.BREAK.NO - from]) || '';
+    }
+    // 登録内容を書き出す（カードに結果を載せるため返信前に行う）
+    const exportNote = exportRow_(date, type);
     // 打刻カードは常に組み立てる（reply=falseの呼び出し元は自前のカードと並べて返すため）
     const punchCard = {
       altText: `${cardType} 登録`,
@@ -1368,23 +1534,15 @@ const MainProc = (function () {
         type: cardType,
         start: isWorking ? start : '',
         end: (isWorking && shouldUpdEnd) ? end : '',
+        rest: isWorking ? restNow : '',
         kosu,
         summary: shouldUpdEnd ? getMonthSummaryData(date) : null,
-        // 有給・欠勤は登録後の有休残を添える
-        note: buildPaidLeaveNote_(type, date, ledger),
+        // 有給・欠勤は登録後の有休残を添える。書き出しに失敗したらそれも添える。
+        note: [buildPaidLeaveNote_(type, date, ledger), exportNote].filter((v) => v).join('\n') || null,
       }),
     };
     if (reply) {
       LineManager.replyFlex(replyToken, punchCard.altText, punchCard.contents);
-    }
-
-    // 勤怠のLINE登録履歴を記録（連絡漏れ監視・週完了判定で使用）
-    if (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING) {
-      recordPunch(date, { start: startProvided, end: shouldUpdEnd, type });
-    } else if (isLeaveType(type)) {
-      recordPunch(date, { type });
-    } else if (cardType === TYPE.CLEAR) {
-      clearPunch(date);
     }
 
     // その週（月〜金）の勤怠がすべて登録され切ったら、週次サマリーを自動送信（週1回）
@@ -1474,11 +1632,14 @@ const MainProc = (function () {
         result = { status: 'info', title: '[テスト] 翌月ファイル作成をスキップ', subtitle: nextLabel };
       } else {
         // 翌月ファイルを作成（予約していた休暇があれば反映される）
-        const applied = copyFile(nextDate);
+        const { applied, exportNg } = copyFile(nextDate);
+        const lines = [nextLabel];
+        if (applied) lines.push(`予約していた休暇 ${applied}件を反映しました`);
+        if (exportNg) lines.push(`⚠️ うち${exportNg}件は書き出しに失敗`);
         result = {
           status: 'ok',
           title: '翌月ファイルを作成しました',
-          subtitle: applied ? `${nextLabel}\n予約していた休暇 ${applied}件を反映しました` : nextLabel,
+          subtitle: lines.join('\n'),
         };
       }
 
@@ -1675,8 +1836,34 @@ const MainProc = (function () {
     // 勤務表が無い状態で登録された休暇の予約を反映（既定値を書いたあとに上書きする）
     const applied = applyReservations_(sheet, year, nextMonthIndex);
     Props.setJsonEntry(PKeys.FILE_MAP, DateUtils.formatDate(new Date(year, nextMonthIndex, 1), 'yyyyMM'), file.id);
-    return applied;
+    // 書き出しはFILE_MAP登録後でないと勤務表を読めないためここで行う
+    return { applied: applied.length, exportNg: exportReservedLeaves_(applied, year, nextMonthIndex) };
   }
+
+  /**
+   * 予約から反映した休暇を書き出します。
+   * 予約反映は updateTime を通らないため、この経路だけ個別に書き出す必要があります。
+   * @param dateKeys 反映した日付（'yyyy-MM-dd'の配列）
+   * @param year 対象年
+   * @param monthIndex 対象月（0始まり）
+   * @return 書き出しに失敗した件数
+   */
+  const exportReservedLeaves_ = (dateKeys, year, monthIndex) => {
+    if (_testMode || !dateKeys.length || !AttendanceExport.isConfigured()) return 0;
+    let ng = 0;
+    for (const key of dateKeys) {
+      const day = Number(key.slice(8, 10));
+      const date = new Date(year, monthIndex, day);
+      try {
+        const row = buildExportRow_(date, readDay_(date).type);
+        if (row) AttendanceExport.write(row);
+      } catch (e) {
+        Logger.log('[exportReservedLeaves_] %s の書き出しに失敗: %s', key, e.message);
+        ng++;
+      }
+    }
+    return ng;
+  };
 
   /**
    * 勤務表ファイルのIDを取得します（Drive APIを呼ばない軽量版）。
@@ -1716,6 +1903,8 @@ const MainProc = (function () {
     label: DateUtils.formatDate(dayDate, 'M/d(aaa)'),
     start: getTime(row[COLUMN_META.START.IDX]) || padTime(Props.getValue(PKeys.START_TIME_DEFAULT)),
     end: getTime(row[COLUMN_META.END.IDX]) || padTime(Props.getValue(PKeys.END_TIME_DEFAULT)),
+    // 休憩は勤務表の既定値（通常1:00）がそのまま初期値になる
+    rest: getTime(row[COLUMN_META.BREAK.IDX]) || '01:00',
     needStart: !punch.start,
     needEnd: !punch.end,
   });
@@ -1730,7 +1919,7 @@ const MainProc = (function () {
     const now = new Date();
     const sheet = getMainSheet(now);
     if (!sheet) return null;
-    const values = sheet.getRange(13, COLUMN_META.DAY.NO, now.getDate(), COLUMN_META.DIFF.NO).getValues();
+    const values = sheet.getRange(13, COLUMN_META.DAY.NO, now.getDate(), ROW_WIDTH).getValues();
     const punchLog = getPunchLog();
 
     const entries = [];
@@ -1750,6 +1939,135 @@ const MainProc = (function () {
     return entries;
   };
 
+  // ===== 書き出し用の読み取り =====
+
+  /**
+   * 勤務表から1日分の登録内容を読み取ります。
+   * 列の定義はこのモジュールが持つため、書き出し側は勤務表のレイアウトを知らずに済む。
+   * @param date 対象日
+   * @return { dateStr, type, start, end, diff } / 勤務表が無ければnull
+   *   type は未登録なら''、start/end/diff は 'HH:mm' か ''（diffは休憩控除後の実働）
+   */
+  const readDay_ = (date) => {
+    const sheet = getMainSheet(date);
+    if (!sheet) return null;
+    const row = sheet.getRange(date.getDate() + 12, COLUMN_META.DAY.NO, 1, ROW_WIDTH).getValues()[0];
+    return {
+      dateStr: DateUtils.formatDate(date, 'yyyy-MM-dd'),
+      type: row[COLUMN_META.TYPE.IDX] || '',
+      start: getTime(row[COLUMN_META.START.IDX]) || '',
+      end: getTime(row[COLUMN_META.END.IDX]) || '',
+      diff: getTime(row[COLUMN_META.DIFF.IDX]) || '',
+    };
+  };
+
+  /**
+   * 指定期間の登録済み勤怠を書き出します（後追い・書き出し直し用）。
+   *
+   * 勤務表は1回の読み取りで済ませ、書き出しも1回にまとめます
+   * （1日ずつ処理するとシートのオープンとDriveの読み書きが日数分走るため）。
+   *
+   * @param from 開始日
+   * @param to 終了日（この日を含む）
+   * @return { exported, skipped: [{dateStr, reason}], failed: [{dateStr, msg}] }
+   */
+  const exportRange_ = (from, to) => {
+    const result = { exported: 0, skipped: [], failed: [] };
+    if (!AttendanceExport.isConfigured()) {
+      throw new Error('EXPORT_FILE_ID が未設定です。attendanceExportFindFile() でIDを調べて設定してください。');
+    }
+    if (from > to) return result;
+
+    const sheet = getMainSheet(from);
+    if (!sheet) {
+      throw new Error(`${DateUtils.formatDate(from, 'yyyy年M月')} の勤務表が見つかりません。`);
+    }
+    // 月内の全日を1回で読む
+    const lastDay = new Date(from.getFullYear(), from.getMonth() + 1, 0).getDate();
+    const values = sheet.getRange(13, COLUMN_META.DAY.NO, lastDay, COLUMN_META.DIFF.NO).getValues();
+
+    // 同じ休日出勤日を複数の代休へ割り当てないよう、書き出し済みと今回分の両方を見る
+    const usedSubstitutes = exportedSubstitutes_();
+    // 勤務表は営業日に既定の時刻が入っているため、退社登録の有無はLINE登録履歴で判断する
+    const punchLog = getPunchLog();
+    const rows = [];
+
+    for (let d = from.getDate(); d <= to.getDate(); d++) {
+      const date = new Date(from.getFullYear(), from.getMonth(), d);
+      const dateStr = DateUtils.formatDate(date, 'yyyy-MM-dd');
+      const raw = values[d - 1];
+      const type = (raw && raw[COLUMN_META.TYPE.IDX]) || '';
+
+      if (!AttendanceExport.isExportTarget(type)) {
+        result.skipped.push({ dateStr, reason: type ? `対象外（${type}）` : '未登録' });
+        continue;
+      }
+
+      const row = {
+        work_date: dateStr,
+        type: type,
+        start: '',
+        end: '',
+        work_time: '',
+        holiday_work_date: '',
+      };
+      if (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING) {
+        const punch = punchLog.get(dateStr);
+        if (!punch || !punch.end) {
+          // 退社が入っていないと勤務時間が確定しない
+          result.skipped.push({ dateStr, reason: '退社未登録' });
+          continue;
+        }
+        row.start = getTime(raw[COLUMN_META.START.IDX]) || '';
+        row.end = getTime(raw[COLUMN_META.END.IDX]) || '';
+        row.work_time = getTime(raw[COLUMN_META.DIFF.IDX]) || '';
+      } else if (type === TYPE.DAIKYU) {
+        const substitute = findRecentHolidayWork_(date, usedSubstitutes);
+        if (!substitute) {
+          result.failed.push({ dateStr, msg: '振替元の休日出勤日が勤務表から見つかりません。' });
+          continue;
+        }
+        row.holiday_work_date = substitute;
+        usedSubstitutes.push(substitute);
+      }
+      rows.push(row);
+    }
+
+    result.exported = AttendanceExport.writeMany(rows);
+    return result;
+  };
+
+  /**
+   * 代休の振替元となる直近の休日出勤日を探します。
+   * 勤務表は代休と休日出勤を紐付けて持っていないため、書き出すときに
+   * 遡って引き当てる。当月と前月の勤務表を新しい順に探索する。
+   * @param date 代休の対象日
+   * @param exclude 既に他の代休へ割り当てた日（'yyyy-MM-dd'の配列）
+   * @return 'yyyy-MM-dd' / 見つからなければnull
+   */
+  const findRecentHolidayWork_ = (date, exclude = []) => {
+    const skip = new Set(exclude);
+    const limit = DateUtils.formatDate(date, 'yyyy-MM-dd');
+    for (let back = 0; back <= 1; back++) {
+      const target = new Date(date.getFullYear(), date.getMonth() - back, 1);
+      const sheet = getMainSheet(target);
+      if (!sheet) continue;
+      const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+      const values = sheet.getRange(13, COLUMN_META.DAY.NO, lastDay, COLUMN_META.DIFF.NO).getValues();
+      for (let i = values.length - 1; i >= 0; i--) {
+        const dayDate = values[i][COLUMN_META.DAY.IDX];
+        if (!(dayDate instanceof Date)) continue;
+        if (values[i][COLUMN_META.TYPE.IDX] !== TYPE.HOLIDAY_WORKING) continue;
+        const key = DateUtils.formatDate(dayDate, 'yyyy-MM-dd');
+        // 代休日より後の休日出勤は振替元になり得ない
+        if (key >= limit) continue;
+        if (skip.has(key)) continue;
+        return key;
+      }
+    }
+    return null;
+  };
+
   /**
    * 指定日1日分の時刻入力カードを組み立てます。
    * @param replyToken リプライトークン（表示できない場合の理由返信に使用）
@@ -1764,7 +2082,7 @@ const MainProc = (function () {
       postErrMsgFileNotFound(replyToken, date);
       return null;
     }
-    const row = sheet.getRange(date.getDate() + 12, COLUMN_META.DAY.NO, 1, COLUMN_META.DIFF.NO).getValues()[0];
+    const row = sheet.getRange(date.getDate() + 12, COLUMN_META.DAY.NO, 1, ROW_WIDTH).getValues()[0];
     const punch = getPunchLog().get(dateStr) || { start: false, end: false };
     const entry = buildPunchEntry_(date, row, punch);
     const title = `${entry.label} の勤怠`;
@@ -1826,18 +2144,19 @@ const MainProc = (function () {
    * 選んだ側だけを更新し、もう一方は現状を維持します。
    * 返信は通常登録と同じ打刻カードを先頭に置き、続けて入力できるよう呼び出し元のカードを添えます。
    * @param replyToken リプライトークン
-   * @param data { date: 'yyyy-MM-dd', field: 'start' | 'end', single: 1日カードから呼ばれたか }
-   * @param params 時刻選択の結果（{ time: 'HH:mm' }）
+   * @param data { date: 'yyyy-MM-dd', field: 'start' | 'end' | 'rest', single: 1日カードから呼ばれたか }
+   * @param params 時刻選択の結果（{ time: 'HH:mm' }。restは時刻ではなく長さとして扱う）
    */
   const executeFillPunch = (replyToken, data, params) => {
     if (!params || !params.time) return;
     const date = Utilities.parseDate(data.date, 'JST', 'yyyy-MM-dd');
-    const isStart = data.field === 'start';
+    const field = data.field;
     const updated = updateTime(replyToken, {
       date,
       type: TYPE.WORKING,
-      start: isStart ? params.time : '-',
-      end: isStart ? '-' : params.time,
+      start: field === 'start' ? params.time : '-',
+      end: field === 'end' ? params.time : '-',
+      rest: field === 'rest' ? params.time : '-',
     }, { reply: false });
     // 中断時はupdateTimeが理由を返信済み
     if (!updated) return;
@@ -2026,6 +2345,14 @@ const MainProc = (function () {
      * 前月確定サマリーを通知します（時間主導トリガーから実行）。
      */
     notifyPrevMonthSummary: () => notifyPrevMonthSummary(),
+    /**
+     * 指定期間の登録済み勤怠をまとめて書き出します（後追い・書き出し直しで使用）。
+     * 勤務表の読み取りとDriveへの書き込みをそれぞれ1回に抑える。
+     * @param from 開始日
+     * @param to 終了日（この日を含む）
+     * @return { exported, skipped: [{dateStr, reason}], failed: [{dateStr, msg}] }
+     */
+    exportRange: (from, to) => exportRange_(from, to),
     enableTestMode: () => { _testMode = true; },
     disableTestMode: () => { _testMode = false; },
   }

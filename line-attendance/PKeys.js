@@ -68,4 +68,9 @@ const PKeys = {
   PAID_LEAVE_USE_ORDER: 'PAID_LEAVE_USE_ORDER',
   /** 有休台帳（JSON: { grants: [{ date, days, expire, used }], used: { 'yyyy-MM-dd': 付与日 } }） */
   PAID_LEAVE_LEDGER: 'PAID_LEAVE_LEDGER',
+
+  // ===== 勤怠の書き出し =====
+
+  /** 登録した勤怠を書き出すJSONのファイルID。未設定なら書き出しを行わない */
+  EXPORT_FILE_ID: 'EXPORT_FILE_ID',
 };

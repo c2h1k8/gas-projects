@@ -41,6 +41,10 @@ function setScriptProps() {
     [PKeys.LINE_CHANNEL_TOKEN]: 'YOUR_LINE_CHANNEL_TOKEN',
     [PKeys.LINE_USER_ID]: 'YOUR_LINE_USER_ID',
     [PKeys.DEBUG_EMAIL]: 'YOUR_DEBUG_EMAIL',
+    // 登録した勤怠を書き出すJSONのファイルID。
+    // attendanceExportCreateFile() を実行すると作成され、ログにIDが出る。
+    // 未設定にすると書き出しが無効になる（勤務表への登録だけが動く）。
+    [PKeys.EXPORT_FILE_ID]: 'YOUR_EXPORT_FILE_ID',
   });
   Logger.log(Props.getAllValues());
 }
