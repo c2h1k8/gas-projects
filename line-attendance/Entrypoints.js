@@ -48,3 +48,12 @@ function summaryMidMonth() {
 function summaryPrevMonth() {
   MainProc.notifyPrevMonthSummary();
 }
+
+/**
+ * 有休台帳を勤務表と予約から作り直します（手動実行）。
+ * 勤務表を直接直して有給の日を変えたときに実行する。
+ */
+function rebuildPaidLeaveLedger() {
+  const ledger = MainProc.rebuildPaidLeaveLedger();
+  Logger.log(`有休台帳を作り直しました: 付与${ledger.grants.length}件 / 消化${Object.keys(ledger.used).length}日`);
+}

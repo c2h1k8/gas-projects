@@ -57,4 +57,17 @@ const PKeys = {
   WEEKLY_SUMMARY_SENT: 'WEEKLY_SUMMARY_SENT',
   /** 勤務表が未作成の月に予約した休暇（JSON Map: { 'yyyy-MM-dd': 勤怠区分 }。勤務表作成時に反映して削除） */
   LEAVE_RESERVATIONS: 'LEAVE_RESERVATIONS',
+
+  /** 入社日（'yyyy-MM-dd'。ここから有給を自動付与。未設定なら有休管理を行わず休暇は欠勤で登録） */
+  PAID_LEAVE_JOIN_DATE: 'PAID_LEAVE_JOIN_DATE',
+  /** 有給の付与テーブル（JSON: [{ months: 継続勤務月数, days: 付与日数 }]。初回=最小月数、以降1年ごと） */
+  PAID_LEAVE_TABLE: 'PAID_LEAVE_TABLE',
+  /** 有給の有効期間（年。時効。未設定なら2年） */
+  PAID_LEAVE_EXPIRE_YEARS: 'PAID_LEAVE_EXPIRE_YEARS',
+  /** 有給の消化順（'newest'=今期分から / 'oldest'=繰越分から。未設定なら'newest'） */
+  PAID_LEAVE_USE_ORDER: 'PAID_LEAVE_USE_ORDER',
+  /** 有休台帳（JSON: { grants: [{ date, days, expire, used }], used: { 'yyyy-MM-dd': 付与日 } }） */
+  PAID_LEAVE_LEDGER: 'PAID_LEAVE_LEDGER',
+  /** 台帳の再構築で使う有給取得日のキャッシュ（JSON Map: { 'yyyyMM': [日, ...] }。過去月のみ） */
+  PAID_LEAVE_CACHE: 'PAID_LEAVE_CACHE',
 };

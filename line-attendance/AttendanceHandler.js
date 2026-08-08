@@ -190,6 +190,8 @@ const MainProc = (function () {
         return null;
       }
       if (!_testMode) setReservations(reservations);
+      // 予約していた有給は消化を戻す
+      recordPaidLeave_('', date);
       LineManager.replyFlex(replyToken, '予約を取り消しました', FlexCards.result({
         status: 'ok', title: '予約を取り消しました', subtitle: dateLabel,
       }));
@@ -199,10 +201,16 @@ const MainProc = (function () {
     reservations.set(key, type);
     pruneOldEntries(reservations);
     if (!_testMode) setReservations(reservations);
+    // 予約の時点で有休を引き当てる（勤務表への反映時に二重に数えないよう日付で管理）
+    const paidNote = buildPaidLeaveNote_(type, date, recordPaidLeave_(type, date));
     LineManager.replyFlex(replyToken, '予約しました', FlexCards.result({
       status: 'ok',
       title: `${type} を予約しました`,
-      subtitle: `${dateLabel}\n${DateUtils.formatDate(date, 'yyyy年M月')}の勤務表を作成したときに反映されます`,
+      subtitle: [
+        dateLabel,
+        `${DateUtils.formatDate(date, 'yyyy年M月')}の勤務表を作成したときに反映されます`,
+        paidNote,
+      ].filter(Boolean).join('\n'),
     }));
     return null;
   };
@@ -255,12 +263,13 @@ const MainProc = (function () {
       };
     });
     const title = '休暇の予約';
+    const ledger = loadPaidLeaveLedger_();
     LineManager.replyFlex(replyToken, title, FlexCards.reservations({
       title,
       note,
       entries,
-      // 未来月の有給・代休はカレンダー登録の入口が無いため、この一覧から予約できるようにする
-      addTypes: [TYPE.HOLIDAY, TYPE.DAIKYU, TYPE.REST],
+      balance: ledger ? paidLeaveText_(ledger, ymdKey_(new Date())) : '',
+      addLeave: true,
     }));
   };
 
@@ -276,6 +285,8 @@ const MainProc = (function () {
       return;
     }
     setReservations(reservations);
+    // 予約していた有給は消化を戻す
+    recordPaidLeave_('', Utilities.parseDate(data.date, 'JST', 'yyyy-MM-dd'));
     const label = DateUtils.formatDate(Utilities.parseDate(data.date, 'JST', 'yyyy-MM-dd'), 'M/d(aaa)');
     displayReservations(replyToken, `${label} の${type}を取り消しました`);
   };
@@ -307,6 +318,338 @@ const MainProc = (function () {
       subtitle: `${DateUtils.formatDate(date, 'yyyy年M月')}分は提出済みです`,
     }));
     return true;
+  };
+
+  // ===== 有給休暇の付与・残日数 =====
+
+  // 継続勤務月数→付与日数（プロパティ未設定時の既定＝労基法の法定日数）
+  const PAID_LEAVE_TABLE_DEFAULT = [
+    { months: 6, days: 10 },
+    { months: 18, days: 11 },
+    { months: 30, days: 12 },
+    { months: 42, days: 14 },
+    { months: 54, days: 16 },
+    { months: 66, days: 18 },
+    { months: 78, days: 20 },
+  ];
+  // 付与の有効期間（年）。プロパティ未設定時の既定＝時効2年
+  const PAID_LEAVE_EXPIRE_YEARS_DEFAULT = 2;
+  // 消化の引き当て順。'newest'=今期分から / 'oldest'=繰越分から
+  const PAID_LEAVE_USE_ORDER_DEFAULT = 'newest';
+  // 台帳に残す失効済みの付与の期間（年）。これより古い付与と消化履歴は捨てる
+  const PAID_LEAVE_KEEP_YEARS = 1;
+  // 再構築で勤務表を読む先読み期間（月）。未来に登録済みの有給も消化として拾う
+  const PAID_LEAVE_LOOKAHEAD_MONTHS = 12;
+
+  const ymdKey_ = (date) => DateUtils.formatDate(date, 'yyyy-MM-dd');
+
+  /**
+   * 月数を加算します。応当日が無い月は月末に丸めます（例: 8/31の6ヶ月後は2月末）。
+   */
+  const addMonths_ = (date, months) => {
+    const moved = new Date(date.getFullYear(), date.getMonth() + months, date.getDate());
+    // 日が繰り上がっていたら応当日の無い月なので、前月の末日へ戻す
+    if (moved.getDate() !== date.getDate()) moved.setDate(0);
+    return moved;
+  };
+
+  /**
+   * 有休管理の設定を返します。
+   * @return { join, table: [{months, days}]（月数の昇順）, expireYears, useOrder } / 入社日が未設定ならnull
+   */
+  const getPaidLeaveConfig_ = () => {
+    const join = Props.getValue(PKeys.PAID_LEAVE_JOIN_DATE);
+    // 入社日が無ければ有休管理をしない運用（休暇はすべて欠勤で登録）
+    if (!join) return null;
+    const table = Props.getJson(PKeys.PAID_LEAVE_TABLE) || PAID_LEAVE_TABLE_DEFAULT;
+    if (!Array.isArray(table) || !table.length) return null;
+    return {
+      join: Utilities.parseDate(join, 'JST', 'yyyy-MM-dd'),
+      table: [...table].sort((a, b) => a.months - b.months),
+      expireYears: Number(Props.getValue(PKeys.PAID_LEAVE_EXPIRE_YEARS)) || PAID_LEAVE_EXPIRE_YEARS_DEFAULT,
+      useOrder: Props.getValue(PKeys.PAID_LEAVE_USE_ORDER) || PAID_LEAVE_USE_ORDER_DEFAULT,
+    };
+  };
+
+  /**
+   * 入社日からの付与予定を組み立てます。
+   * 初回は表の最小月数（法定は6ヶ月）、以降は1年ごとに付与し、
+   * 表の最終行を超えた勤続は最終行の日数が続きます。
+   * @param config 有休設定
+   * @param through この日までに付与されるものを対象にする
+   * @return [{ date, days, expire }]（'yyyy-MM-dd'・付与日の昇順）
+   */
+  const paidLeaveSchedule_ = (config, through) => {
+    const schedule = [];
+    for (let months = config.table[0].months; ; months += 12) {
+      const date = addMonths_(config.join, months);
+      if (date > through) break;
+      const row = config.table.filter((r) => r.months <= months).pop();
+      schedule.push({
+        date: ymdKey_(date),
+        days: row.days,
+        // 失効日（この日から使えない）＝付与日のNヶ年後。最終利用日はその前日。
+        expire: ymdKey_(addMonths_(date, config.expireYears * 12)),
+      });
+    }
+    return schedule;
+  };
+
+  // ----- 有休台帳（プロパティで保持し、登録のたびに更新する） -----
+
+  const emptyLedger_ = () => ({ grants: [], used: {} });
+
+  const savePaidLeaveLedger_ = (ledger) => {
+    if (_testMode) return;
+    Props.setJson(PKeys.PAID_LEAVE_LEDGER, ledger);
+  };
+
+  /**
+   * 台帳を読み込み、未登録の付与の追加・古い付与の整理まで済ませて返します。
+   * 台帳がまだ無い場合は勤務表から再構築します（導入時に過去の消化を取り込むため）。
+   * @param through この日までの付与を用意する（未来日の登録にも対応するため）
+   * @return 台帳 / 有休管理が未設定ならnull
+   */
+  const loadPaidLeaveLedger_ = (through = new Date()) => {
+    const config = getPaidLeaveConfig_();
+    if (!config) return null;
+    const stored = Props.getJson(PKeys.PAID_LEAVE_LEDGER);
+    const ledger = (stored && Array.isArray(stored.grants)) ? stored : rebuildPaidLeaveLedger_(config);
+    if (syncPaidLeaveGrants_(ledger, config, through)) savePaidLeaveLedger_(ledger);
+    return ledger;
+  };
+
+  /**
+   * 付与予定を台帳へ反映し、古くなった付与と消化履歴を整理します。
+   * @return 台帳を変更したらtrue
+   */
+  const syncPaidLeaveGrants_ = (ledger, config, through) => {
+    let changed = false;
+    for (const s of paidLeaveSchedule_(config, through)) {
+      const grant = ledger.grants.find((g) => g.date === s.date);
+      if (!grant) {
+        ledger.grants.push({ date: s.date, days: s.days, expire: s.expire, used: 0 });
+        changed = true;
+      } else if (grant.days !== s.days || grant.expire !== s.expire) {
+        // 付与テーブルや時効の設定を変えたときは、消化実績を残したまま条件だけ追従させる
+        grant.days = s.days;
+        grant.expire = s.expire;
+        changed = true;
+      }
+    }
+    ledger.grants.sort((a, b) => (a.date < b.date ? -1 : 1));
+
+    // 失効から一定期間を過ぎた付与と、それに紐づく消化履歴は捨てる
+    const cutoff = ymdKey_(addMonths_(new Date(), -12 * PAID_LEAVE_KEEP_YEARS));
+    const dropped = ledger.grants.filter((g) => g.expire < cutoff).map((g) => g.date);
+    if (dropped.length) {
+      ledger.grants = ledger.grants.filter((g) => g.expire >= cutoff);
+      for (const key of Object.keys(ledger.used)) {
+        if (dropped.includes(ledger.used[key])) delete ledger.used[key];
+      }
+      changed = true;
+    }
+    return changed;
+  };
+
+  /**
+   * 指定日に有効な付与を返します（付与日以後・失効前）。
+   */
+  const validGrants_ = (ledger, key) => ledger.grants.filter((g) => g.date <= key && key < g.expire);
+
+  /**
+   * 指定日時点の有休残を返します。
+   */
+  const paidLeaveRemain_ = (ledger, key) => validGrants_(ledger, key)
+    .reduce((sum, g) => sum + (g.days - g.used), 0);
+
+  /**
+   * 1日分の消化を付与へ引き当てます（設定に応じて今期分／繰越分から使う）。
+   * 同じ日を二重に引き当てないよう、登録済みの日は何もしません。
+   * @return 引き当てできればtrue
+   */
+  const applyPaidLeaveUse_ = (ledger, key, useOrder) => {
+    if (ledger.used[key]) return true;
+    const usable = validGrants_(ledger, key).filter((g) => g.used < g.days);
+    if (!usable.length) return false;
+    // 付与日の昇順に並んでいるため、今期分＝末尾／繰越分＝先頭
+    const grant = useOrder === 'oldest' ? usable[0] : usable[usable.length - 1];
+    grant.used++;
+    ledger.used[key] = grant.date;
+    return true;
+  };
+
+  /**
+   * 引き当て済みの消化を取り消します（有給以外への変更・クリア・予約取消で使用）。
+   * @return 取り消したらtrue
+   */
+  const releasePaidLeaveUse_ = (ledger, key) => {
+    const grantDate = ledger.used[key];
+    if (!grantDate) return false;
+    const grant = ledger.grants.find((g) => g.date === grantDate);
+    if (grant && grant.used > 0) grant.used--;
+    delete ledger.used[key];
+    return true;
+  };
+
+  /**
+   * 勤務表と予約から台帳を作り直します（導入時・手動リセット時）。
+   * 通常の登録はプロパティの台帳を更新するだけなので、ここは勤務表を直接直したとき用。
+   * @param config 有休設定
+   * @return 作り直した台帳
+   */
+  const rebuildPaidLeaveLedger_ = (config = getPaidLeaveConfig_()) => {
+    const ledger = emptyLedger_();
+    if (!config) return ledger;
+    const from = addMonths_(config.join, config.table[0].months);
+    const used = collectPaidLeaveDates_(from, addMonths_(new Date(), PAID_LEAVE_LOOKAHEAD_MONTHS));
+    const through = used.length
+      ? Utilities.parseDate(used[used.length - 1], 'JST', 'yyyy-MM-dd')
+      : new Date();
+    syncPaidLeaveGrants_(ledger, config, through > new Date() ? through : new Date());
+    // 実際に取得した順に引き当てる（引き当て順の設定はここでも同じ）
+    for (const key of used) applyPaidLeaveUse_(ledger, key, config.useOrder);
+    savePaidLeaveLedger_(ledger);
+    return ledger;
+  };
+
+  // ----- 勤務表からの消化日の収集（台帳の再構築でのみ使用） -----
+
+  const getPaidLeaveCache = () => Props.getJson(PKeys.PAID_LEAVE_CACHE) || new Map();
+
+  /**
+   * 指定月の勤務表から有給休暇の日（1-31）を読み取ります。
+   * 稼働の集計と違い未来の行も読む（先に登録した未来の有給も消化として扱うため）。
+   * @param month 対象月（日は不問）
+   */
+  const readPaidLeaveDays_ = (month) => {
+    const sheet = getMainSheet(month);
+    if (!sheet) return [];
+    const lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+    const values = sheet.getRange(13, COLUMN_META.DAY.NO, lastDay, COLUMN_META.TYPE.NO).getValues();
+    const days = [];
+    for (const row of values) {
+      const dayDate = row[COLUMN_META.DAY.IDX];
+      if (!(dayDate instanceof Date) || dayDate.getMonth() !== month.getMonth()) continue;
+      if (row[COLUMN_META.TYPE.IDX] === TYPE.HOLIDAY) days.push(dayDate.getDate());
+    }
+    return days;
+  };
+
+  /**
+   * 有給として登録済みの日を集めます（勤務表＋勤務表が未作成の月の予約）。
+   * 過ぎた月は確定するためキャッシュし、毎回開くのは当月以降の勤務表だけに抑える。
+   * @param from 集計開始日（初回の付与日）
+   * @param to 勤務表を読む最終日（予約はこれより先も対象）
+   * @return 'yyyy-MM-dd' の配列（昇順）
+   */
+  const collectPaidLeaveDates_ = (from, to) => {
+    const cache = getPaidLeaveCache();
+    const fromKey = ymdKey_(from);
+    const fromYm = DateUtils.formatDate(from, 'yyyyMM');
+    const nowYm = DateUtils.formatDate(new Date(), 'yyyyMM');
+    const keys = new Set();
+    let cacheUpdated = false;
+
+    for (let m = new Date(from.getFullYear(), from.getMonth(), 1); m <= to; m.setMonth(m.getMonth() + 1)) {
+      const month = new Date(m);
+      const ym = DateUtils.formatDate(month, 'yyyyMM');
+      const cached = cache.get(ym);
+      // 過ぎた月は勤務表が変わらないためキャッシュを使う（当月以降は毎回読む）
+      let days = (ym < nowYm && Array.isArray(cached)) ? cached : null;
+      if (!days) {
+        days = readPaidLeaveDays_(month);
+        if (ym < nowYm) {
+          cache.set(ym, days);
+          cacheUpdated = true;
+        }
+      }
+      for (const day of days) {
+        const key = `${ym.slice(0, 4)}-${ym.slice(4)}-${String(day).padStart(2, '0')}`;
+        if (key >= fromKey) keys.add(key);
+      }
+    }
+
+    // 勤務表が未作成の月の予約分（作成時にシートへ反映されるため、先に消化として数える）
+    for (const [key, type] of getReservations()) {
+      if (type === TYPE.HOLIDAY && key >= fromKey) keys.add(key);
+    }
+
+    if (cacheUpdated && !_testMode) {
+      for (const key of cache.keys()) {
+        if (key < fromYm) cache.delete(key);
+      }
+      Props.setJson(PKeys.PAID_LEAVE_CACHE, cache);
+    }
+    return [...keys].sort();
+  };
+
+  // ----- 登録・表示 -----
+
+  /**
+   * 有休台帳に今回の登録を反映します（有給なら消化、それ以外の区分なら消化を戻す）。
+   * @param type 登録した勤怠区分（クリアは空文字）
+   * @param date 対象日
+   * @return 反映後の台帳 / 有休管理が未設定ならnull
+   */
+  const recordPaidLeave_ = (type, date) => {
+    const config = getPaidLeaveConfig_();
+    if (!config) return null;
+    const ledger = loadPaidLeaveLedger_(date);
+    const key = ymdKey_(date);
+    const changed = type === TYPE.HOLIDAY
+      ? applyPaidLeaveUse_(ledger, key, config.useOrder)
+      : releasePaidLeaveUse_(ledger, key);
+    if (changed) savePaidLeaveLedger_(ledger);
+    return ledger;
+  };
+
+  /**
+   * 有休残の表示文言を組み立てます。
+   * @param ledger 台帳
+   * @param key 基準日 'yyyy-MM-dd'
+   */
+  const paidLeaveText_ = (ledger, key) => {
+    const remain = paidLeaveRemain_(ledger, key);
+    if (remain <= 0) return '有休 残 0日';
+    // 次に失効する分（残っている有効な付与のうち、失効が最も早いもの）
+    const next = validGrants_(ledger, key)
+      .filter((g) => g.used < g.days)
+      .sort((a, b) => (a.expire < b.expire ? -1 : 1))[0];
+    if (!next) return `有休 残 ${remain}日`;
+    const until = Utilities.parseDate(next.expire, 'JST', 'yyyy-MM-dd');
+    until.setDate(until.getDate() - 1);
+    return `有休 残 ${remain}日（${DateUtils.formatDate(until, 'yyyy/M/d')}までに ${next.days - next.used}日）`;
+  };
+
+  /**
+   * 休暇を登録します。有給が残っていれば有給休暇、残っていなければ欠勤で登録します。
+   * @param replyToken リプライトークン
+   * @param date 対象日
+   */
+  const executeRegistLeave = (replyToken, date) => {
+    // 区分を決める前に、登録できない日はここで弾く
+    if (replySubmittedLock_(replyToken, date)) return;
+    const ledger = loadPaidLeaveLedger_(date);
+    const key = ymdKey_(date);
+    // 既に有給として引き当て済みの日は、押し直しても有給のまま
+    const canPaid = !!ledger && (!!ledger.used[key] || paidLeaveRemain_(ledger, key) > 0);
+    updateTime(replyToken, { date, type: canPaid ? TYPE.HOLIDAY : TYPE.REST, start: '-', end: '-' });
+  };
+
+  /**
+   * 打刻カードに添える有休残の文言を組み立てます。
+   * @param type 登録した勤怠区分
+   * @param date 対象日
+   * @param ledger 反映後の台帳（null可）
+   * @return 表示文言（有休管理をしない設定ならnull）
+   */
+  const buildPaidLeaveNote_ = (type, date, ledger) => {
+    if (!ledger) return null;
+    if (type !== TYPE.HOLIDAY && type !== TYPE.REST) return null;
+    const key = ymdKey_(date);
+    if (type === TYPE.REST && paidLeaveRemain_(ledger, key) <= 0) return '有休の残がないため欠勤です';
+    return paidLeaveText_(ledger, key);
   };
 
   /**
@@ -1100,6 +1443,8 @@ const MainProc = (function () {
       sheet.getRange(rowNo, COLUMN_META.START.NO).setValue(start);
       sheet.getRange(rowNo, COLUMN_META.END.NO).setValue(end);
     }
+    // 有休台帳へ反映（有給なら消化、他の区分・クリアなら消化を戻す）
+    const ledger = recordPaidLeave_(type, date);
     const cardType = type || TYPE.CLEAR;
     const isWorking = (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING);
     // 退社まで入った稼働日のみ工数が確定する
@@ -1116,6 +1461,8 @@ const MainProc = (function () {
         end: (isWorking && shouldUpdEnd) ? end : '',
         kosu,
         summary: shouldUpdEnd ? getMonthSummaryData(date) : null,
+        // 有給・欠勤は登録後の有休残を添える
+        note: buildPaidLeaveNote_(type, date, ledger),
       }),
     };
     if (reply) {
@@ -1153,10 +1500,6 @@ const MainProc = (function () {
         workInfo.type = TYPE.WORKING;
         workInfo[data.action] = getTime(workInfo.date);
         break;
-      case 'break':
-        // 欠勤
-        workInfo.type = TYPE.REST;
-        break;
       default:
         return;
     }
@@ -1178,7 +1521,12 @@ const MainProc = (function () {
       displayDayPunch(replyToken, params.date);
       return;
     }
-    // 欠勤・クリアは区分のみなのでそのまま更新
+    if (isLeaveType(data.type)) {
+      // 休暇は区分を自動判定する（区分を持つ古いリッチメニューからのポストバックもここで受ける）
+      executeRegistLeave(replyToken, Utilities.parseDate(params.date, 'JST', 'yyyy-MM-dd'));
+      return;
+    }
+    // クリアは区分のみなのでそのまま更新
     updateTime(replyToken, {
       type: data.type,
       date: Utilities.parseDate(params.date, 'JST', 'yyyy-MM-dd'),
@@ -1639,9 +1987,18 @@ const MainProc = (function () {
       switch (data.action) {
         case 'start':
         case 'end':
-        case 'break':
           // 当日勤怠登録
           executeRegistWorkToday(replyToken, data);
+          break;
+        case 'break':
+          // 当日の休暇（有休の残に応じて有給/欠勤を自動判定）
+          executeRegistLeave(replyToken, new Date());
+          break;
+        case 'leave-calendar':
+          // カレンダーで日付を選んだ休暇（区分は自動判定）
+          if (receivePostback.params && receivePostback.params.date) {
+            executeRegistLeave(replyToken, Utilities.parseDate(receivePostback.params.date, 'JST', 'yyyy-MM-dd'));
+          }
           break;
         case 'calendar':
           // カレンダー勤怠登録
@@ -1736,6 +2093,25 @@ const MainProc = (function () {
      * @param mode 'noon' | 'night'
      */
     checkAttendanceOmissions: (mode) => checkAttendanceOmissions(mode),
+    /**
+     * 有休台帳（付与履歴・消化・残日数）を返します（確認・テスト用）。
+     * @return { grants: [{ date, days, expire, used }], used: { 'yyyy-MM-dd': 付与日 } } / 未設定ならnull
+     */
+    getPaidLeaveLedger: (date = new Date()) => loadPaidLeaveLedger_(date),
+    /**
+     * 指定日時点の有休残を返します。
+     */
+    getPaidLeaveRemain: (date = new Date()) => {
+      const ledger = loadPaidLeaveLedger_(date);
+      return ledger ? paidLeaveRemain_(ledger, ymdKey_(date)) : null;
+    },
+    /**
+     * 有休台帳を勤務表と予約から作り直します（勤務表を直接直したとき用）。
+     */
+    rebuildPaidLeaveLedger: () => {
+      Props.deleteKey(PKeys.PAID_LEAVE_CACHE);
+      return rebuildPaidLeaveLedger_();
+    },
     /**
      * 週次サマリーを当日基準で通知します（手動テスト用。自動送信は登録完了時に発火）。
      */
