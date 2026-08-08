@@ -11,12 +11,12 @@
  * ファイル形式（UTF-8・work_date昇順の配列）:
  *   [
  *     { "work_date": "2026-08-08", "type": "出勤", "start": "09:30", "end": "18:30",
- *       "work_time": "08:00", "rest": "01:00", "holiday_work_date": "" },
+ *       "rest": "01:00", "holiday_work_date": "" },
  *     { "work_date": "2026-08-10", "type": "有給休暇", "start": "", "end": "",
- *       "work_time": "", "rest": "", "holiday_work_date": "" }
+ *       "rest": "", "holiday_work_date": "" }
  *   ]
  *
- * 値は勤務表から解決済みのものだけを書きます（時刻・実働・休憩・代休の振替元）。
+ * 値は勤務表から解決済みのものだけを書きます（時刻・休憩・代休の振替元）。
  * 勤務表のレイアウトを知っているのはこのプロジェクトだけなので、
  * 読み取り側がシートの構造を意識せずに済むようにするためです。
  *
@@ -25,7 +25,7 @@
  * 未設定なら何もしません（＝書き出しを安全に無効化できる）。
  */
 const AttendanceExport = (function () {
-  const FIELDS = ['work_date', 'type', 'start', 'end', 'work_time', 'rest', 'holiday_work_date'];
+  const FIELDS = ['work_date', 'type', 'start', 'end', 'rest', 'holiday_work_date'];
   const LOCK_NAME = 'AttendanceExport';
   const FILE_NAME = 'attendance-export.json';
   const EMPTY = '[]\n';
@@ -90,7 +90,7 @@ const AttendanceExport = (function () {
    * 出社だけ登録→あとで退社を登録、のように同じ日が何度も更新されるため、
    * 追加のままだと同じ日の要素が積み重なってしまいます。
    *
-   * @param row { work_date, type, start, end, work_time, rest, holiday_work_date }
+   * @param row { work_date, type, start, end, rest, holiday_work_date }
    * @return 成否（未設定・対象外はfalse）
    */
   const write = (row) => {
@@ -264,8 +264,9 @@ function attendanceExportList() {
     return;
   }
   Logger.log('書き出し済み %s件', rows.length);
-  rows.forEach((r) => Logger.log('  %s %s %s %s 実働%s %s %s',
-    r.work_date, r.type, r.start, r.end, r.work_time, r.rest ? '休憩' + r.rest : '', r.holiday_work_date ? '振替元' + r.holiday_work_date : ''));
+  rows.forEach((r) => Logger.log('  %s %s %s %s %s %s',
+    r.work_date, r.type, r.start, r.end,
+    r.rest ? '休憩' + r.rest : '', r.holiday_work_date ? '振替元' + r.holiday_work_date : ''));
 }
 
 /** 書き出し先を空にします */

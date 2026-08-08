@@ -1396,7 +1396,6 @@ const MainProc = (function () {
       type: type,
       start: '',
       end: '',
-      work_time: '',
       rest: '',
       holiday_work_date: '',
     };
@@ -1407,7 +1406,6 @@ const MainProc = (function () {
       if (!punch || !punch.end) return null;
       row.start = day.start;
       row.end = day.end;
-      row.work_time = day.diff;
       row.rest = day.rest;
       return row;
     }
@@ -2012,7 +2010,6 @@ const MainProc = (function () {
         type: type,
         start: '',
         end: '',
-        work_time: '',
         rest: '',
         holiday_work_date: '',
       };
@@ -2025,7 +2022,6 @@ const MainProc = (function () {
         }
         row.start = getTime(raw[COLUMN_META.START.IDX]) || '';
         row.end = getTime(raw[COLUMN_META.END.IDX]) || '';
-        row.work_time = getTime(raw[COLUMN_META.DIFF.IDX]) || '';
         row.rest = getTime(raw[COLUMN_META.BREAK.IDX]) || '';
       } else if (type === TYPE.DAIKYU) {
         const substitute = findRecentHolidayWork_(date, usedSubstitutes);
