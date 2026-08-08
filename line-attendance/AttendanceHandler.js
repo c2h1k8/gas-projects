@@ -338,8 +338,6 @@ const MainProc = (function () {
   const PAID_LEAVE_USE_ORDER_DEFAULT = 'newest';
   // 台帳に残す失効済みの付与の期間（年）。これより古い付与と消化履歴は捨てる
   const PAID_LEAVE_KEEP_YEARS = 1;
-  // 再構築で勤務表を読む先読み期間（月）。未来に登録済みの有給も消化として拾う
-  const PAID_LEAVE_LOOKAHEAD_MONTHS = 12;
 
   const ymdKey_ = (date) => DateUtils.formatDate(date, 'yyyy-MM-dd');
 
@@ -406,7 +404,10 @@ const MainProc = (function () {
 
   /**
    * 台帳を読み込み、未登録の付与の追加・古い付与の整理まで済ませて返します。
-   * 台帳がまだ無い場合は勤務表から再構築します（導入時に過去の消化を取り込むため）。
+   * 新しい期の付与はここで追加されるため、台帳に触れる操作（打刻・休暇登録・予約）が
+   * そのまま付与のきっかけになります（時間主導トリガーは不要）。
+   * 消化実績は勤務表から追えないので、台帳が無い場合は消化なしから始めます
+   * （導入時の実績はプロパティへ直接書いて用意する）。
    * @param through この日までの付与を用意する（未来日の登録にも対応するため）
    * @return 台帳 / 有休管理が未設定ならnull
    */
@@ -414,7 +415,7 @@ const MainProc = (function () {
     const config = getPaidLeaveConfig_();
     if (!config) return null;
     const stored = Props.getJson(PKeys.PAID_LEAVE_LEDGER);
-    const ledger = (stored && Array.isArray(stored.grants)) ? stored : rebuildPaidLeaveLedger_(config);
+    const ledger = (stored && Array.isArray(stored.grants)) ? stored : emptyLedger_();
     if (syncPaidLeaveGrants_(ledger, config, through)) savePaidLeaveLedger_(ledger);
     return ledger;
   };
@@ -490,98 +491,6 @@ const MainProc = (function () {
     if (grant && grant.used > 0) grant.used--;
     delete ledger.used[key];
     return true;
-  };
-
-  /**
-   * 勤務表と予約から台帳を作り直します（導入時・手動リセット時）。
-   * 通常の登録はプロパティの台帳を更新するだけなので、ここは勤務表を直接直したとき用。
-   * @param config 有休設定
-   * @return 作り直した台帳
-   */
-  const rebuildPaidLeaveLedger_ = (config = getPaidLeaveConfig_()) => {
-    const ledger = emptyLedger_();
-    if (!config) return ledger;
-    const from = addMonths_(config.join, config.table[0].months);
-    const used = collectPaidLeaveDates_(from, addMonths_(new Date(), PAID_LEAVE_LOOKAHEAD_MONTHS));
-    const through = used.length
-      ? Utilities.parseDate(used[used.length - 1], 'JST', 'yyyy-MM-dd')
-      : new Date();
-    syncPaidLeaveGrants_(ledger, config, through > new Date() ? through : new Date());
-    // 実際に取得した順に引き当てる（引き当て順の設定はここでも同じ）
-    for (const key of used) applyPaidLeaveUse_(ledger, key, config.useOrder);
-    savePaidLeaveLedger_(ledger);
-    return ledger;
-  };
-
-  // ----- 勤務表からの消化日の収集（台帳の再構築でのみ使用） -----
-
-  const getPaidLeaveCache = () => Props.getJson(PKeys.PAID_LEAVE_CACHE) || new Map();
-
-  /**
-   * 指定月の勤務表から有給休暇の日（1-31）を読み取ります。
-   * 稼働の集計と違い未来の行も読む（先に登録した未来の有給も消化として扱うため）。
-   * @param month 対象月（日は不問）
-   */
-  const readPaidLeaveDays_ = (month) => {
-    const sheet = getMainSheet(month);
-    if (!sheet) return [];
-    const lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-    const values = sheet.getRange(13, COLUMN_META.DAY.NO, lastDay, COLUMN_META.TYPE.NO).getValues();
-    const days = [];
-    for (const row of values) {
-      const dayDate = row[COLUMN_META.DAY.IDX];
-      if (!(dayDate instanceof Date) || dayDate.getMonth() !== month.getMonth()) continue;
-      if (row[COLUMN_META.TYPE.IDX] === TYPE.HOLIDAY) days.push(dayDate.getDate());
-    }
-    return days;
-  };
-
-  /**
-   * 有給として登録済みの日を集めます（勤務表＋勤務表が未作成の月の予約）。
-   * 過ぎた月は確定するためキャッシュし、毎回開くのは当月以降の勤務表だけに抑える。
-   * @param from 集計開始日（初回の付与日）
-   * @param to 勤務表を読む最終日（予約はこれより先も対象）
-   * @return 'yyyy-MM-dd' の配列（昇順）
-   */
-  const collectPaidLeaveDates_ = (from, to) => {
-    const cache = getPaidLeaveCache();
-    const fromKey = ymdKey_(from);
-    const fromYm = DateUtils.formatDate(from, 'yyyyMM');
-    const nowYm = DateUtils.formatDate(new Date(), 'yyyyMM');
-    const keys = new Set();
-    let cacheUpdated = false;
-
-    for (let m = new Date(from.getFullYear(), from.getMonth(), 1); m <= to; m.setMonth(m.getMonth() + 1)) {
-      const month = new Date(m);
-      const ym = DateUtils.formatDate(month, 'yyyyMM');
-      const cached = cache.get(ym);
-      // 過ぎた月は勤務表が変わらないためキャッシュを使う（当月以降は毎回読む）
-      let days = (ym < nowYm && Array.isArray(cached)) ? cached : null;
-      if (!days) {
-        days = readPaidLeaveDays_(month);
-        if (ym < nowYm) {
-          cache.set(ym, days);
-          cacheUpdated = true;
-        }
-      }
-      for (const day of days) {
-        const key = `${ym.slice(0, 4)}-${ym.slice(4)}-${String(day).padStart(2, '0')}`;
-        if (key >= fromKey) keys.add(key);
-      }
-    }
-
-    // 勤務表が未作成の月の予約分（作成時にシートへ反映されるため、先に消化として数える）
-    for (const [key, type] of getReservations()) {
-      if (type === TYPE.HOLIDAY && key >= fromKey) keys.add(key);
-    }
-
-    if (cacheUpdated && !_testMode) {
-      for (const key of cache.keys()) {
-        if (key < fromYm) cache.delete(key);
-      }
-      Props.setJson(PKeys.PAID_LEAVE_CACHE, cache);
-    }
-    return [...keys].sort();
   };
 
   // ----- 登録・表示 -----
@@ -2104,13 +2013,6 @@ const MainProc = (function () {
     getPaidLeaveRemain: (date = new Date()) => {
       const ledger = loadPaidLeaveLedger_(date);
       return ledger ? paidLeaveRemain_(ledger, ymdKey_(date)) : null;
-    },
-    /**
-     * 有休台帳を勤務表と予約から作り直します（勤務表を直接直したとき用）。
-     */
-    rebuildPaidLeaveLedger: () => {
-      Props.deleteKey(PKeys.PAID_LEAVE_CACHE);
-      return rebuildPaidLeaveLedger_();
     },
     /**
      * 週次サマリーを当日基準で通知します（手動テスト用。自動送信は登録完了時に発火）。

@@ -68,6 +68,4 @@ const PKeys = {
   PAID_LEAVE_USE_ORDER: 'PAID_LEAVE_USE_ORDER',
   /** 有休台帳（JSON: { grants: [{ date, days, expire, used }], used: { 'yyyy-MM-dd': 付与日 } }） */
   PAID_LEAVE_LEDGER: 'PAID_LEAVE_LEDGER',
-  /** 台帳の再構築で使う有給取得日のキャッシュ（JSON Map: { 'yyyyMM': [日, ...] }。過去月のみ） */
-  PAID_LEAVE_CACHE: 'PAID_LEAVE_CACHE',
 };
