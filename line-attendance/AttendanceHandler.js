@@ -1397,6 +1397,7 @@ const MainProc = (function () {
       start: '',
       end: '',
       work_time: '',
+      rest: '',
       holiday_work_date: '',
     };
     if (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING) {
@@ -1407,6 +1408,7 @@ const MainProc = (function () {
       row.start = day.start;
       row.end = day.end;
       row.work_time = day.diff;
+      row.rest = day.rest;
       return row;
     }
     if (type === TYPE.DAIKYU) {
@@ -1945,8 +1947,9 @@ const MainProc = (function () {
    * 勤務表から1日分の登録内容を読み取ります。
    * 列の定義はこのモジュールが持つため、書き出し側は勤務表のレイアウトを知らずに済む。
    * @param date 対象日
-   * @return { dateStr, type, start, end, diff } / 勤務表が無ければnull
-   *   type は未登録なら''、start/end/diff は 'HH:mm' か ''（diffは休憩控除後の実働）
+   * @return { dateStr, type, start, end, diff, rest } / 勤務表が無ければnull
+   *   type は未登録なら''、時刻は 'HH:mm' か ''
+   *   diff は休憩控除後の実働、rest は休憩時間（AJ列）
    */
   const readDay_ = (date) => {
     const sheet = getMainSheet(date);
@@ -1958,6 +1961,7 @@ const MainProc = (function () {
       start: getTime(row[COLUMN_META.START.IDX]) || '',
       end: getTime(row[COLUMN_META.END.IDX]) || '',
       diff: getTime(row[COLUMN_META.DIFF.IDX]) || '',
+      rest: getTime(row[COLUMN_META.BREAK.IDX]) || '',
     };
   };
 
@@ -1982,9 +1986,9 @@ const MainProc = (function () {
     if (!sheet) {
       throw new Error(`${DateUtils.formatDate(from, 'yyyy年M月')} の勤務表が見つかりません。`);
     }
-    // 月内の全日を1回で読む
+    // 月内の全日を1回で読む（休憩まで含めるので幅はROW_WIDTH）
     const lastDay = new Date(from.getFullYear(), from.getMonth() + 1, 0).getDate();
-    const values = sheet.getRange(13, COLUMN_META.DAY.NO, lastDay, COLUMN_META.DIFF.NO).getValues();
+    const values = sheet.getRange(13, COLUMN_META.DAY.NO, lastDay, ROW_WIDTH).getValues();
 
     // 同じ休日出勤日を複数の代休へ割り当てないよう、書き出し済みと今回分の両方を見る
     const usedSubstitutes = exportedSubstitutes_();
@@ -2009,6 +2013,7 @@ const MainProc = (function () {
         start: '',
         end: '',
         work_time: '',
+        rest: '',
         holiday_work_date: '',
       };
       if (type === TYPE.WORKING || type === TYPE.HOLIDAY_WORKING) {
@@ -2021,6 +2026,7 @@ const MainProc = (function () {
         row.start = getTime(raw[COLUMN_META.START.IDX]) || '';
         row.end = getTime(raw[COLUMN_META.END.IDX]) || '';
         row.work_time = getTime(raw[COLUMN_META.DIFF.IDX]) || '';
+        row.rest = getTime(raw[COLUMN_META.BREAK.IDX]) || '';
       } else if (type === TYPE.DAIKYU) {
         const substitute = findRecentHolidayWork_(date, usedSubstitutes);
         if (!substitute) {
