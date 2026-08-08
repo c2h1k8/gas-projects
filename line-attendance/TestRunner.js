@@ -118,10 +118,28 @@ function test_postback_退勤() {
   _teardownTest_();
 }
 
-/** テスト: 欠勤ポストバック */
-function test_postback_欠勤() {
+/** テスト: 休暇ポストバック（当日・有休残に応じて有給/欠勤を自動判定） */
+function test_postback_休暇() {
   _setupTest_();
   _runPostback_({ action: 'break' });
+  _teardownTest_();
+}
+
+/** テスト: 有休台帳（付与履歴・消化・残をログ出力） */
+function test_有休残() {
+  _setupTest_();
+  const ledger = MainProc.getPaidLeaveLedger(new Date());
+  if (!ledger) {
+    Logger.log('有休管理は未設定（PAID_LEAVE_JOIN_DATE）');
+  } else {
+    const today = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+    Logger.log(`有休: 残 ${MainProc.getPaidLeaveRemain()}日`);
+    ledger.grants.forEach((g) => {
+      const state = (g.date <= today && today < g.expire) ? '有効' : '失効';
+      Logger.log(`  ${g.date} 付与${g.days}日 → 残${g.days - g.used}日（${g.expire}の前日まで・${state}）`);
+    });
+    Logger.log(`  消化: ${JSON.stringify(ledger.used)}`);
+  }
   _teardownTest_();
 }
 
@@ -153,10 +171,10 @@ function test_postback_カレンダー() {
   _teardownTest_();
 }
 
-/** テスト: カレンダー登録ポストバック（欠勤・日付選択後） */
-function test_postback_カレンダー欠勤() {
+/** テスト: カレンダー登録ポストバック（休暇・日付選択後 → 種別選択カード） */
+function test_postback_カレンダー休暇() {
   _setupTest_();
-  _runPostback_({ action: 'calendar', type: '欠勤' }, { date: '2026-07-22' });
+  _runPostback_({ action: 'leave-calendar' }, { date: '2026-07-22' });
   _teardownTest_();
 }
 
@@ -276,11 +294,12 @@ function test_all() {
     ['MSG リスト先月',         () => _runMessage_('リスト1')],
     ['PB 出勤',                () => _runPostback_({ action: 'start' })],
     ['PB 退勤',                () => _runPostback_({ action: 'end' })],
-    ['PB 欠勤',                () => _runPostback_({ action: 'break' })],
+    ['PB 休暇',                () => _runPostback_({ action: 'break' })],
     ['PB 一覧',                () => _runPostback_({ action: 'list', month: '' })],
     ['PB 推移',                () => _runPostback_({ action: 'history' })],
     ['PB ヘルプ',              () => _runPostback_({ action: 'help' })],
     ['PB カレンダー出勤',       () => _runPostback_({ action: 'calendar', type: '出勤' }, { date: '2026-07-22' })],
+    ['PB カレンダー休暇',       () => _runPostback_({ action: 'leave-calendar' }, { date: '2026-07-22' })],
     ['PB 未登録一覧',           () => _runPostback_({ action: 'unregistered' })],
     ['PB 未登録_退社入力',      () => _runPostback_({ action: 'fill-punch', date: '2026-07-22', field: 'end' }, { time: '19:30' })],
     ['PB 今週の状況',           () => _runPostback_({ action: 'weekly' })],

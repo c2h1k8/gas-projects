@@ -11,7 +11,8 @@
  * 何度実行しても良いように、既存のメニュー・エイリアスは削除してから作り直します。
  *
  * ページ構成:
- *   A=登録（する）  : 出社/退社/欠勤、カレンダー出勤/欠勤/クリア
+ *   A=登録（する）  : 出社/退社/休暇、カレンダー出勤/休暇/クリア
+ *      ※ 休暇は押した後に区分（有給休暇/欠勤/代休）を選ぶカードを返す
  *   B=稼働・提出（送る）: 当月稼働/先月稼働/推移、未登録/提出/ヘルプ
  *   C=状況確認（見る）: 今週の状況/着地見込み/提出状況、勤務表を開く/翌月作成/休暇予約
  *      上段＝いまの状況（今週→当月→提出）、下段＝道具
@@ -43,7 +44,7 @@ const RICHMENU_A = {
     { bounds: { x: 400, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"end"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 800, y: 132, width: 400, height: 339 }, action: { type: 'postback', data: '{"action":"break"}', inputOption: 'closeRichMenu' } },
     { bounds: { x: 0, y: 471, width: 400, height: 339 }, action: { type: 'datetimepicker', data: '{"action":"calendar","type":"出勤"}', mode: 'date', inputOption: 'closeRichMenu' } },
-    { bounds: { x: 400, y: 471, width: 400, height: 339 }, action: { type: 'datetimepicker', data: '{"action":"calendar","type":"欠勤"}', mode: 'date', inputOption: 'closeRichMenu' } },
+    { bounds: { x: 400, y: 471, width: 400, height: 339 }, action: { type: 'datetimepicker', data: '{"action":"leave-calendar"}', mode: 'date', inputOption: 'closeRichMenu' } },
     { bounds: { x: 800, y: 471, width: 400, height: 339 }, action: { type: 'datetimepicker', data: '{"action":"calendar","type":"クリア"}', mode: 'date', inputOption: 'closeRichMenu' } },
   ],
 };

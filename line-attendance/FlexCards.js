@@ -51,10 +51,11 @@ const FlexCards = (() => {
   return {
     /**
      * 打刻結果カード。
-     * @param {{dateLabel, type, start, end, kosu, summary}} p
+     * @param {{dateLabel, type, start, end, kosu, summary, note}} p
      *   summary: { total, overtime, forecast } いずれも文字列でnull可（nullの項目は出さない）。summary自体null可。
+     *   note: 末尾に添える補足（有休残など）。null可。
      */
-    punch: ({ dateLabel, type, start, end, kosu, summary }) => {
+    punch: ({ dateLabel, type, start, end, kosu, summary, note }) => {
       const c = colorOf(type);
       const body = [];
 
@@ -88,6 +89,10 @@ const FlexCards = (() => {
           body.push(sep());
           body.push({ type: 'box', layout: 'horizontal', margin: 'md', contents: m });
         }
+      }
+      if (note) {
+        body.push(sep());
+        body.push(text(note, { size: 'xs', color: GRAY, align: 'center', wrap: true, margin: 'md' }));
       }
 
       return shell(c, [
@@ -318,13 +323,15 @@ const FlexCards = (() => {
 
     /**
      * 休暇の予約一覧カード（月ごとの見出し・日付単位の取消・カレンダーからの追加）。
-     * @param {{title, note, entries, addTypes}} p
+     * @param {{title, note, entries, balance, addLeave}} p
      *   entries: [{ dateStr, monthLabel, label, type }]（日付昇順）。空なら未予約の案内を出す。
-     *   addTypes: 予約を追加できる勤怠区分の配列（カレンダーを開くボタンになる）
+     *   balance: 有休残の表示文言（省略可）
+     *   addLeave: 休暇を予約するカレンダーボタンを出すか
      */
-    reservations: ({ title, note, entries, addTypes }) => {
+    reservations: ({ title, note, entries, balance, addLeave }) => {
       const body = [];
       if (note) body.push(text(note, { size: 'xs', color: GRAY, align: 'center', wrap: true }));
+      if (balance) body.push(text(balance, { size: 'sm', color: DARK, weight: 'bold', align: 'center' }));
 
       if (entries.length) {
         body.push(text('勤務表を作成したときに自動で反映されます', { size: 'xs', color: GRAY, align: 'center', wrap: true }));
@@ -359,16 +366,16 @@ const FlexCards = (() => {
         body.push(text('勤務表が未作成の月の休みを、先に登録しておけます', { size: 'xs', color: GRAY, align: 'center', wrap: true }));
       }
 
-      (addTypes || []).forEach((t, i) => {
-        if (i === 0) body.push(sep('lg'));
+      if (addLeave) {
+        body.push(sep('lg'));
         body.push({
           type: 'button', height: 'sm', style: 'secondary', margin: 'sm',
           action: {
-            type: 'datetimepicker', label: `${t}を予約`, mode: 'date',
-            data: JSON.stringify({ action: 'calendar', type: t }),
+            type: 'datetimepicker', label: '休暇を予約', mode: 'date',
+            data: JSON.stringify({ action: 'leave-calendar' }),
           },
         });
-      });
+      }
 
       return shell(BLUE, [text(title, { color: '#FFFFFF', weight: 'bold', size: 'md' })], body);
     },
@@ -416,13 +423,16 @@ const FlexCards = (() => {
         text('下のタブのボタン操作が基本。メッセージ入力でも操作できます。', { size: 'xs', color: GRAY, wrap: true, margin: 'sm' }),
         sep(),
         section('メニュー（下のタブ）', [
-          { k: '勤怠登録', v: '出社・退社・欠勤／カレンダー登録' },
+          { k: '勤怠登録', v: '出社・退社・休暇／カレンダー登録' },
           { k: '稼働・提出', v: '稼働一覧・推移／未登録の登録・勤務表提出' },
           { k: '状況確認', v: '今週の状況・着地見込み・提出状況／勤務表を開く・翌月作成・休暇予約' },
         ]),
+        section('休暇の登録', [
+          '「休暇」を押すと、有休が残っていれば有給休暇、残っていなければ欠勤で登録します。区分を指定したいときはメッセージ入力（h／r）を使います。',
+        ]),
         section('休暇の予約', [
           '勤務表が未作成の月の休みは予約として保存され、その月の勤務表を作成したときに自動で反映されます。',
-          { k: '休暇予約', v: '予約の確認・取消・追加' },
+          { k: '休暇予約', v: '有休残の確認・予約の取消・追加' },
         ]),
         section('打刻（メッセージ入力）', [
           { k: '1900', v: '退社' },
