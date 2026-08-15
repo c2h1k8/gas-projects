@@ -293,10 +293,12 @@ const SheetLayout = (function () {
    * @param unitCell 丸め単位が入っているセル（例 '$J2'）
    */
   const roundedByCell = (expr, modeCell, unitCell) => {
+    // 丸め単位は「1円単位」のような言葉で入っているので、数値に戻してから使う。
     // 単位で割った後に小数6桁へ丸めてから端数処理する。
     // 703,130×0.7 が 492,190.99999… と評価されるような浮動小数の誤差があり、
     // そのまま切り捨てると1円ずれるため。
-    return `LET(u,IF(N(${unitCell})=0,1,${unitCell}),v,ROUND((${expr})/u,6),`
+    const unit = `IFERROR(VALUE(SUBSTITUTE(${unitCell},"${Contracts.UNIT_SUFFIX}","")),1)`;
+    return `LET(u,${unit},v,ROUND((${expr})/u,6),`
       + `IF(${modeCell}="${Contracts.ROUNDING.UP}",ROUNDUP(v),`
       + `IF(${modeCell}="${Contracts.ROUNDING.HALF}",ROUND(v),ROUNDDOWN(v)))*u)`;
   };
@@ -431,11 +433,11 @@ const SheetLayout = (function () {
     at(COL.MONTHLY).setNumberFormat('#,##0');
     at(COL.LOWER, 3).setNumberFormat('0.00');
     at(COL.ROUND_ADJ).setNumberFormat('@');
-    at(COL.UNIT_ADJ).setNumberFormat(Contracts.UNIT_FORMAT);
+    at(COL.UNIT_ADJ).setNumberFormat('@');
     // サマリは計算に使う割合（0.7）を持つのでパーセント書式でよい（入力欄ではないため）
     at(COL.RATE).setNumberFormat('0%');
     at(COL.ROUND_PAY).setNumberFormat('@');
-    at(COL.UNIT_PAY).setNumberFormat(Contracts.UNIT_FORMAT);
+    at(COL.UNIT_PAY).setNumberFormat('@');
     // 時間単価は割り切れない契約もあるため小数1桁まで見せる
     at(COL.HOURLY).setNumberFormat('#,##0.#');
     at(COL.DIFF_H).setNumberFormat('0.00');
