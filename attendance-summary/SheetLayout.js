@@ -12,8 +12,10 @@ const SheetLayout = (function () {
   const SUMMARY_SHEET = 'サマリ';
   /** 設定シート名 */
   const CONFIG_SHEET = '設定';
-  /** データの開始行（1行目はヘッダ） */
-  const DATA_START_ROW = 2;
+  /** 見出しの行数（1段目＝ブロック名、2段目＝列名） */
+  const HEADER_ROWS = 2;
+  /** データの開始行 */
+  const DATA_START_ROW = HEADER_ROWS + 1;
   /** 日別列の日数（月の最大日数） */
   const MAX_DAYS = 31;
 
@@ -99,7 +101,7 @@ const SheetLayout = (function () {
     [COL.ADJUST]: 88,
     [COL.REVENUE]: 92,
     [COL.PAYMENT]: 96,
-    [COL.LINK_OPEN]: 56,
+    [COL.LINK_OPEN]: 58,
     [COL.LINK_XLSX]: 96,
     [COL.FILE_CREATED]: 118,
     [COL.FILE_UPDATED]: 118,
@@ -110,6 +112,8 @@ const SheetLayout = (function () {
   const DAY_WIDTH = 42;
   /** 日別の文字サイズ。31列並ぶので本文より一段小さくする */
   const DAY_FONT_SIZE = 9;
+  /** データ行の高さ。既定の21pxだと詰まって見える */
+  const ROW_HEIGHT = 26;
 
   /**
    * 隠しておく列。
@@ -124,6 +128,27 @@ const SheetLayout = (function () {
   const NAMED_STD_HOURS = 'STD_HOURS';
   /** この残業時間（月）を超えた行を警告色にする。36協定の目安 */
   const OVERTIME_ALERT = 45;
+
+  /**
+   * 見出し1段目に置くブロック。
+   *
+   * どの列がどのまとまりかを、色ではなく言葉で示します。
+   * 年月と日別はブロック名を持たず、列名を2段ぶんの高さで縦に結合して見せます
+   * （日別は31列と幅が広いため、結合した見出しだと横スクロールで画面外へ出てしまう）。
+   */
+  const HEADER_GROUPS = () => [
+    { label: '勤務実績', from: COL.WORK_DAYS, to: COL.ACTUAL_H, accent: THEME.ACCENT_SUM },
+    // 超過控除単価は月額単価÷基準時間で決まる契約側の単価なので、精算結果ではなく契約条件に含める
+    { label: '契約条件', from: COL.MONTHLY, to: COL.HOURLY, accent: THEME.ACCENT_CONTRACT },
+    { label: '精算と支払', from: COL.DIFF_H, to: COL.PAYMENT, accent: THEME.ACCENT_MONEY },
+    { label: '勤務表', from: COL.LINK_OPEN, to: COL.FILE_ID, accent: THEME.ACCENT_META },
+  ];
+
+  /**
+   * ブロックの先頭列。ここに縦罫を入れて区切りを示す。
+   * 年月・契約（行の見出し）と勤務実績の間にも引く。
+   */
+  const BLOCK_STARTS = () => [COL.WORK_DAYS, COL.MONTHLY, COL.DIFF_H, COL.LINK_OPEN, COL.DAY_START];
 
   /** スプレッドシートのURLの共通部分（リンク列の組み立てに使う） */
   const SS_URL = 'https://docs.google.com/spreadsheets/d/';
@@ -140,75 +165,84 @@ const SheetLayout = (function () {
    */
   const THEME = {
     /** 見出しの文字色 */
-    HEADER_TEXT: '#ffffff',
-    /** 見出し：勤務表から集計した列 */
-    HEADER_AUTO: '#2f3e4e',
-    /** 見出し：契約シート由来の列 */
-    HEADER_CONTRACT: '#3f3d66',
-    /** 見出し：金額の列 */
-    HEADER_MONEY: '#24504a',
-    /** 見出し：メタ列 */
-    HEADER_META: '#4b5563',
-    /** 見出し：日別 */
-    HEADER_DAY: '#2f3e4e',
+    HEADER_TEXT: '#f8fafc',
+    /** 見出し2段目（列名）の地色。ブロックごとに変えず1色で通す */
+    HEADER_AUTO: '#1e293b',
+    HEADER_CONTRACT: '#1e293b',
+    HEADER_MONEY: '#1e293b',
+    HEADER_META: '#1e293b',
+    HEADER_DAY: '#1e293b',
+    /** 見出し1段目（ブロック名）の地色と文字色 */
+    HEADER_GROUP: '#0f172a',
+    HEADER_GROUP_TEXT: '#cbd5e1',
 
-    /** 本文：契約シート由来の列 */
-    BODY_CONTRACT: '#eeeef8',
-    /** 本文：金額の列 */
-    BODY_MONEY: '#eaf4f1',
-    /** 本文：メタ列 */
-    BODY_META: '#f6f7f8',
+    /** ブロックを示すアクセント罫。塗り面積を小さくして識別だけを残す */
+    ACCENT_SUM: '#94a3b8',
+    ACCENT_CONTRACT: '#a5b4fc',
+    ACCENT_MONEY: '#5eead4',
+    ACCENT_META: '#64748b',
+    ACCENT_DAY: '#94a3b8',
+
+    /** 本文：沈める列（メタ・自動計算） */
+    BODY_META: '#f8fafc',
+    BODY_MONEY: '#f8fafc',
     /** 本文：手入力欄（設定・契約シート） */
-    BODY_INPUT: '#fff8e6',
+    BODY_INPUT: '#fffbeb',
 
     /** ブロックの区切り線 */
-    BORDER: '#c3ccd6',
+    BORDER: '#cbd5e1',
+    /** 行の区切り線 */
+    ROW_LINE: '#f1f5f9',
     /** 数字を落ち着かせるための文字色 */
-    TEXT_MUTED: '#5f6b76',
+    TEXT_MUTED: '#64748b',
+    /** 日別の文字色。31列並ぶので黒より一段落とす */
+    DAY_TEXT: '#475569',
+    /** リンクの文字色。既定の青は他の色と合わないので、金額側のアクセントに寄せる */
+    LINK: '#0f766e',
 
     /** 端数処理：切り捨て */
-    ROUND_DOWN: '#e4eefb',
+    ROUND_DOWN: '#eff6ff',
     /** 端数処理：切り上げ */
-    ROUND_UP: '#fdeee4',
+    ROUND_UP: '#fff7ed',
     /** 端数処理：四捨五入 */
-    ROUND_HALF: '#e6f4ea',
+    ROUND_HALF: '#ecfdf5',
 
     /** 入力が要るのに空の欄 */
-    REQUIRED: '#fdecea',
+    REQUIRED: '#fee2e2',
     /** 入れても入れなくてもよい欄 */
     OPTIONAL: '#ffffff',
     /** その契約では使わない欄 */
-    DISABLED: '#f1f3f4',
+    DISABLED: '#f1f5f9',
     /** 使わない欄の文字（消さずに沈める） */
-    DISABLED_TEXT: '#b3b8bd',
+    DISABLED_TEXT: '#94a3b8',
     /** 精算あり */
-    SETTLE_ON: '#e6f4ea',
+    SETTLE_ON: '#ecfdf5',
     /** 精算なし */
-    SETTLE_OFF: '#f1f3f4',
+    SETTLE_OFF: '#f1f5f9',
 
     /** 残業が目安を超えた月 */
-    ALERT: '#fce8e6',
+    ALERT: '#ffe4e6',
     /** 同上の文字色 */
-    ALERT_TEXT: '#c5221f',
+    ALERT_TEXT: '#be123c',
 
-    /** 年計行の背景 */
-    YEAR_BG: '#dde2e8',
-    /** 年計行の文字 */
-    YEAR_TEXT: '#1f2a36',
+    /** 年計行。データ行とわずかに差が出る程度の淡い地色にとどめる */
+    YEAR_BG: '#f1f5f9',
+    YEAR_TEXT: '#0f172a',
+    YEAR_RULE: '#1e293b',
   };
 
-  /** 日別セルの背景色 */
+  /** 日別セルの背景色。31列並ぶので彩度を落として数字を主役にする */
   const BG = {
     /** 土日・祝日 */
-    HOLIDAY: '#eceff1',
+    HOLIDAY: '#f8fafc',
     /** その月に存在しない日（2月の30日など） */
-    NONE: '#cfd8dc',
+    NONE: '#e2e8f0',
     /** 有給休暇 */
-    PAID: '#dff0e3',
+    PAID: '#ecfdf5',
     /** 代休 */
-    DAIKYU: '#fdf0df',
+    DAIKYU: '#fffbeb',
     /** 欠勤 */
-    ABSENT: '#fbe4e4',
+    ABSENT: '#fff1f2',
     /** 通常の営業日 */
     NORMAL: '#ffffff',
   };
@@ -241,10 +275,10 @@ const SheetLayout = (function () {
     h[COL.ADJUST] = '精算額';
     h[COL.REVENUE] = '売上';
     h[COL.PAYMENT] = '支払額';
-    h[COL.LINK_OPEN] = '勤務表';
+    h[COL.LINK_OPEN] = '開く';
     h[COL.LINK_XLSX] = 'ダウンロード';
-    h[COL.FILE_CREATED] = '勤務表 作成日';
-    h[COL.FILE_UPDATED] = '勤務表 最終更新';
+    h[COL.FILE_CREATED] = '作成日';
+    h[COL.FILE_UPDATED] = '最終更新';
     h[COL.IMPORTED_AT] = '取込日時';
     h[COL.FILE_ID] = 'ファイルID';
     for (let d = 1; d <= MAX_DAYS; d++) h[COL.DAY_START + d - 1] = String(d);
@@ -318,11 +352,16 @@ const SheetLayout = (function () {
     // 日平均＝実績時間 ÷ 稼働日数
     f[COL.DAY_AVG] = `=IF(N($${L.WORK_DAYS}${r})=0,"",ROUND($${L.ACTUAL_H}${r}/$${L.WORK_DAYS}${r},2))`;
 
-    // 残業時間＝稼働時間 −（稼働日数 × 所定労働時間）。
+    // 残業時間＝実績時間 −（稼働日数 × 所定労働時間）。
+    //
+    // 稼働時間ではなく実績時間を使う。稼働時間は当月だと月末までの見込みが入るのに対し、
+    // 稼働日数は今日までの出勤日数なので、そのまま引くと分子だけ先の期間を含んでしまい
+    // 残業が大きく出てしまうため。実績どうしで引けば、当月は「今日までの残業」になる。
+    //
     // 有給・欠勤・代休の日は所定にも実働にも数えず、休日出勤の時間は全額が残業側に乗る。
     // LINE勤怠Bot側の残業計算と同じ定義にして、両者の数字が食い違わないようにしている。
-    f[COL.OVERTIME] = `=IF(OR($${L.WORK_H}${r}="",N($${L.WORK_DAYS}${r})=0),"",`
-      + `ROUND($${L.WORK_H}${r}-$${L.WORK_DAYS}${r}*${NAMED_STD_HOURS},2))`;
+    f[COL.OVERTIME] = `=IF(OR($${L.ACTUAL_H}${r}="",N($${L.WORK_DAYS}${r})=0),"",`
+      + `ROUND($${L.ACTUAL_H}${r}-$${L.WORK_DAYS}${r}*${NAMED_STD_HOURS},2))`;
 
     // 時間単価＝月額単価 ÷ 基準時間（例: 750,000 / 160h → 4,687.5 → 切り捨て → 4,687）
     f[COL.HOURLY] = `=IF(OR($${L.MONTHLY}${r}="",N($${L.BASE_H}${r})=0),"",${rounded(`$${L.MONTHLY}${r}/$${L.BASE_H}${r}`, r, COL.ROUND_ADJ, COL.UNIT_ADJ)})`;
@@ -384,12 +423,18 @@ const SheetLayout = (function () {
     });
   };
 
-  /** 年計行の見た目を整えます。 */
+  /**
+   * 年計行の見た目を整えます。
+   * 塗りつぶすと表組みが重くなるので、上に濃い罫を引いて太字にするだけにします。
+   */
   const styleYearRows = (sheet, rowNumbers) => {
     rowNumbers.forEach((r) => {
+      // 行全体を淡く塗る。濃くすると見出しと見分けがつかなくなるので、
+      // データ行との差が分かる程度にとどめる。
+      // 残業の警告色は年計行では文字色だけを変えるので、この地色は途切れない。
       sheet.getRange(r, 1, 1, TOTAL_COLS)
         .setBackground(THEME.YEAR_BG).setFontColor(THEME.YEAR_TEXT).setFontWeight('bold')
-        .setBorder(true, null, null, null, null, null, THEME.HEADER_AUTO, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+        .setBorder(true, null, null, null, null, null, THEME.YEAR_RULE, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
       sheet.getRange(r, COL.YM).setHorizontalAlignment('left');
     });
   };
@@ -445,27 +490,30 @@ const SheetLayout = (function () {
     at(COL.FILE_CREATED, 3).setNumberFormat('yyyy/MM/dd HH:mm');
     at(COL.FILE_ID).setNumberFormat('@');
     at(COL.DAY_START, MAX_DAYS).setNumberFormat('0.00').setFontSize(DAY_FONT_SIZE);
-    at(COL.LINK_OPEN, 2).setHorizontalAlignment('center');
+    // リンクは既定の青・既定サイズだと浮くので、メタ列の文字サイズに揃えて色を当て直す
+    at(COL.LINK_OPEN, COL.LINK_XLSX - COL.LINK_OPEN + 1)
+      .setHorizontalAlignment('center').setFontSize(9).setFontColor(THEME.LINK);
 
-    // 値の出どころが分かるよう、ブロックごとに淡く色を敷く
-    at(COL.MONTHLY, COL.UNIT_PAY - COL.MONTHLY + 1).setBackground(THEME.BODY_CONTRACT);
-    at(COL.CONTRACT).setBackground(THEME.BODY_CONTRACT);
-    at(COL.HOURLY, COL.PAYMENT - COL.HOURLY + 1).setBackground(THEME.BODY_MONEY);
+    // 地色は敷かない。白のままにして、区切りは罫線と余白で示す。
+    // 沈めるのはメタ列だけ（内容を追う場面が少ないため）。
     at(COL.LINK_OPEN, COL.FILE_ID - COL.LINK_OPEN + 1).setBackground(THEME.BODY_META);
-    // 日時とIDだけ沈める（リンクは既定のリンク色のままにしたいので触らない）
-    at(COL.FILE_CREATED, COL.FILE_ID - COL.FILE_CREATED + 1)
+    at(COL.FILE_CREATED, COL.IMPORTED_AT - COL.FILE_CREATED + 1)
       .setFontColor(THEME.TEXT_MUTED).setFontSize(9);
+    at(COL.DAY_START, MAX_DAYS).setFontColor(THEME.DAY_TEXT);
 
     // 支払額は結論なので太字にして視線が止まるようにする
     at(COL.PAYMENT).setFontWeight('bold');
 
-    // ブロックの境目に縦線を入れる
-    [COL.MONTHLY, COL.HOURLY, COL.LINK_OPEN, COL.DAY_START].forEach((c) => {
-      sheet.getRange(1, c, rowCount + 1, 1)
+    // 行の区切りは細い横罫だけ。塗り分けないぶん、行が追えるようにする
+    sheet.getRange(DATA_START_ROW, 1, rowCount, TOTAL_COLS)
+      .setBorder(null, null, null, null, null, true, THEME.ROW_LINE, SpreadsheetApp.BorderStyle.SOLID);
+
+    // ブロックの境目に縦線を入れる（見出しから本文までを通す）
+    BLOCK_STARTS().forEach((c) => {
+      sheet.getRange(1, c, rowCount + HEADER_ROWS, 1)
         .setBorder(null, true, null, null, null, null, THEME.BORDER, SpreadsheetApp.BorderStyle.SOLID);
     });
 
-    applyOvertimeAlert(sheet, rowCount);
     applyRoundingColors(sheet, DATA_START_ROW, COL.ROUND_ADJ, rowCount);
     applyRoundingColors(sheet, DATA_START_ROW, COL.ROUND_PAY, rowCount);
   };
@@ -490,20 +538,38 @@ const SheetLayout = (function () {
   ];
 
   /**
-   * 残業が目安を超えた月を警告色にします（健康管理・36協定）。
+   * 残業が目安を超えた行を警告色にします（健康管理・36協定）。
+   *
+   * 月の行は背景と文字色の両方を変えますが、年計行は文字色だけにします。
+   * 年計行は見出しとして地色を敷いているので、1セルだけ背景が変わると浮いて見えるためです。
+   *
+   * @param monthRanges 月の行の範囲 [{ from, count }]
+   * @param yearRows 年計行の行番号
    */
-  const applyOvertimeAlert = (sheet, rowCount) => {
-    if (rowCount <= 0) return;
-    const range = sheet.getRange(DATA_START_ROW, COL.OVERTIME, rowCount, 1);
-    const a1 = range.getA1Notation();
+  const applyOvertimeAlert = (sheet, monthRanges, yearRows) => {
+    // この列に対する既存ルールを外してから入れ直す
     const kept = sheet.getConditionalFormatRules()
-      .filter((rule) => !rule.getRanges().some((r) => r.getA1Notation() === a1));
-    kept.push(SpreadsheetApp.newConditionalFormatRule()
-      .whenNumberGreaterThan(OVERTIME_ALERT)
-      .setBackground(THEME.ALERT)
-      .setFontColor(THEME.ALERT_TEXT)
-      .setRanges([range])
-      .build());
+      .filter((rule) => !rule.getRanges().every((r) => r.getColumn() === COL.OVERTIME));
+
+    const months = (monthRanges || []).map((g) => sheet.getRange(g.from, COL.OVERTIME, g.count, 1));
+    if (months.length) {
+      kept.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberGreaterThan(OVERTIME_ALERT)
+        .setBackground(THEME.ALERT)
+        .setFontColor(THEME.ALERT_TEXT)
+        .setRanges(months)
+        .build());
+    }
+
+    const years = (yearRows || []).map((r) => sheet.getRange(r, COL.OVERTIME));
+    if (years.length) {
+      kept.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberGreaterThan(OVERTIME_ALERT)
+        .setFontColor(THEME.ALERT_TEXT)
+        .setRanges(years)
+        .build());
+    }
+
     sheet.setConditionalFormatRules(kept);
   };
 
@@ -521,11 +587,55 @@ const SheetLayout = (function () {
   };
 
   /**
+   * 今の列の表示・非表示を、見出しの名前をキーにして控えます。
+   *
+   * 隠す列を決め打ちにすると、確認のために表示した列が初期化のたびに閉じてしまいます。
+   * シート上で右クリックして開いた・閉じたという操作をそのまま尊重するための控えです。
+   * 列が増減してもずれないよう、列番号ではなく見出しの名前で持ちます。
+   */
+  const readHiddenState_ = (sheet) => {
+    const state = {};
+    const cols = sheet.getMaxColumns();
+    if (cols < 1 || sheet.getLastRow() < 1) return state;
+    const rows = Math.min(HEADER_ROWS, sheet.getMaxRows());
+    const head = sheet.getRange(1, 1, rows, cols).getValues();
+    for (let c = 1; c <= cols; c++) {
+      // 1段見出しだった頃は1行目、2段になってからは2行目に列名が入る
+      const name = String((head[rows - 1] && head[rows - 1][c - 1]) || head[0][c - 1] || '').trim();
+      if (!name) continue;
+      state[name] = sheet.isColumnHiddenByUser(c);
+    }
+    return state;
+  };
+
+  /**
+   * 控えた表示状態を当て直します。控えに無い列（新しく増えた列）は既定に従います。
+   */
+  const applyHiddenState_ = (sheet, prevHidden) => {
+    for (let c = 1; c <= TOTAL_COLS; c++) {
+      const name = HEADERS[c - 1];
+      const hide = Object.prototype.hasOwnProperty.call(prevHidden, name)
+        ? prevHidden[name]
+        : HIDDEN_COLS.indexOf(c) >= 0;
+      if (hide) sheet.hideColumns(c);
+      else sheet.showColumns(c);
+    }
+  };
+
+  /**
    * サマリシート・設定シート・契約シートを整えます（初期化）。
    * データ行は消さず、ヘッダ・書式・固定行だけを作り直します。
    */
   const setup = (ss) => {
     const summary = ss.getSheetByName(SUMMARY_SHEET) || ss.insertSheet(SUMMARY_SHEET);
+
+    // 今の表示・非表示を控えておく（初期化で勝手に戻さないため）
+    const prevHidden = readHiddenState_(summary);
+
+    // 固定行をまたぐ結合はできないので、組み立てる間だけ固定を外す。
+    // 年月と日別の見出しは1行目と2行目を縦に結合するため、固定が1行のままだと境界を越えてしまう。
+    summary.setFrozenRows(0);
+    summary.setFrozenColumns(0);
 
     // 列数を合わせる（既定の26列では日別まで入らない）
     if (summary.getMaxColumns() < TOTAL_COLS) {
@@ -534,27 +644,71 @@ const SheetLayout = (function () {
       summary.deleteColumns(TOTAL_COLS + 1, summary.getMaxColumns() - TOTAL_COLS);
     }
 
-    // ヘッダ。列構成が変わったときに前のメモが別の列へずれて残らないよう、先に落とす
-    const header = summary.getRange(1, 1, 1, TOTAL_COLS);
+    // ヘッダ。列構成が変わったときに前のメモや結合が残らないよう、先に解く
+    const header = summary.getRange(1, 1, HEADER_ROWS, TOTAL_COLS);
+    header.breakApart();
     header.clearNote();
-    header.setValues([HEADERS]);
-    header.setFontWeight('bold').setFontColor(THEME.HEADER_TEXT).setFontSize(10)
-      .setHorizontalAlignment('center').setVerticalAlignment('middle').setWrap(true);
-    // ブロックごとにヘッダの色を変え、どの列がどこ由来かひと目で分かるようにする
-    summary.getRange(1, COL.YM, 1, COL.ACTUAL_H - COL.YM + 1).setBackground(THEME.HEADER_AUTO);
-    summary.getRange(1, COL.MONTHLY, 1, COL.UNIT_PAY - COL.MONTHLY + 1).setBackground(THEME.HEADER_CONTRACT);
-    summary.getRange(1, COL.HOURLY, 1, COL.PAYMENT - COL.HOURLY + 1).setBackground(THEME.HEADER_MONEY);
-    summary.getRange(1, COL.LINK_OPEN, 1, COL.FILE_ID - COL.LINK_OPEN + 1).setBackground(THEME.HEADER_META);
-    summary.getRange(1, COL.DAY_START, 1, MAX_DAYS).setBackground(THEME.HEADER_DAY).setFontSize(DAY_FONT_SIZE);
-    summary.setRowHeight(1, 34);
 
-    summary.getRange(1, COL.CONTRACT).setNote('契約シートの内容から自動で埋まります。直接編集しても更新で上書きされます。');
-    summary.getRange(1, COL.REVENUE).setNote('月額単価＋精算額。発注元に請求される額。\n進行中の月（見込み時間が入っている行）は着地見込みの額。');
-    summary.getRange(1, COL.PAYMENT).setNote('売上×還元率。支払われるはずの額。\n進行中の月（見込み時間が入っている行）は着地見込みの額。');
-    summary.getRange(1, COL.DIFF_H).setNote('精算幅からのはみ出し。見込み時間があればそれを、無ければ実績時間を元に計算する。');
+    // 1段目にブロック名、2段目に列名。
+    // 年月と日別はブロックを持たないので、列名を1段目に置いて縦に結合する。
+    const row1 = new Array(TOTAL_COLS).fill('');
+    const row2 = new Array(TOTAL_COLS).fill('');
+    const groups = HEADER_GROUPS();
+    groups.forEach((g) => {
+      row1[g.from - 1] = g.label;
+      for (let c = g.from; c <= g.to; c++) row2[c - 1] = HEADERS[c - 1];
+    });
+    row1[COL.YM - 1] = HEADERS[COL.YM - 1];
+    row1[COL.CONTRACT - 1] = HEADERS[COL.CONTRACT - 1];
+    for (let d = 0; d < MAX_DAYS; d++) row1[COL.DAY_START - 1 + d] = HEADERS[COL.DAY_START - 1 + d];
+
+    header.setValues([row1, row2]);
+    header.setFontWeight('bold').setHorizontalAlignment('center')
+      .setVerticalAlignment('middle').setWrap(true);
+
+    // 2段目（列名）は1色。ブロックの違いは1段目の言葉とアクセント罫で示す
+    summary.getRange(1, 1, HEADER_ROWS, TOTAL_COLS)
+      .setBackground(THEME.HEADER_AUTO).setFontColor(THEME.HEADER_TEXT).setFontSize(10);
+    // 1段目（ブロック名）は一段濃く、字を小さく開いて見出しらしく
+    summary.getRange(1, 1, 1, TOTAL_COLS)
+      .setBackground(THEME.HEADER_GROUP).setFontColor(THEME.HEADER_GROUP_TEXT).setFontSize(9);
+
+    // ブロック名は横に結合し、下にアクセント罫を敷く
+    groups.forEach((g) => {
+      const cell = summary.getRange(1, g.from, 1, g.to - g.from + 1);
+      cell.merge();
+      cell.setBorder(null, null, true, null, null, null, g.accent, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+    });
+
+    // 年月と日別は2段ぶんを縦に結合して、番号や見出しが常に見えるようにする
+    // 年月と契約はどの月の行かを示すもので、ブロックには属さない
+    const merged = [
+      { col: COL.YM, accent: THEME.ACCENT_SUM, size: 10 },
+      { col: COL.CONTRACT, accent: THEME.ACCENT_SUM, size: 10 },
+    ];
+    for (let d = 0; d < MAX_DAYS; d++) {
+      merged.push({ col: COL.DAY_START + d, accent: THEME.ACCENT_DAY, size: DAY_FONT_SIZE });
+    }
+    merged.forEach((m) => {
+      const cell = summary.getRange(1, m.col, HEADER_ROWS, 1);
+      cell.merge();
+      cell.setBackground(THEME.HEADER_AUTO).setFontColor(THEME.HEADER_TEXT).setFontSize(m.size);
+      cell.setBorder(null, null, true, null, null, null, m.accent, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+    });
+
+    summary.setRowHeight(1, 24);
+    summary.setRowHeight(2, 34);
+
+    const note = (col, text) => summary.getRange(2, col).setNote(text);
+    note(COL.CONTRACT, '契約シートの内容から自動で埋まります。直接編集しても更新で上書きされます。');
+    note(COL.REVENUE, '月額単価＋精算額。発注元に請求される額。\n進行中の月は着地見込みの額。');
+    note(COL.PAYMENT, '売上×還元率。支払われるはずの額。\n進行中の月は着地見込みの額。');
+    note(COL.WORK_H, '精算の元になる時間。過去月は実績、進行中の月は着地見込み（斜体で表示）。');
+    note(COL.OVERTIME, '実績時間 −（稼働日数 × 所定労働時間）。\n進行中の月は「今日までの残業」で、着地見込みではありません。');
+    note(COL.DIFF_H, '精算幅からのはみ出し。稼働時間を元に計算する。');
 
     // 年月と見出しを固定して、右へスクロールしてもどの月か分かるようにする
-    summary.setFrozenRows(1);
+    summary.setFrozenRows(HEADER_ROWS);
     summary.setFrozenColumns(1);
 
     // 列幅。同じ幅が続くところはまとめて指定して呼び出し回数を抑える
@@ -566,7 +720,7 @@ const SheetLayout = (function () {
       run = { from: c, width: w };
     }
     summary.setColumnWidths(COL.DAY_START, MAX_DAYS, DAY_WIDTH);
-    HIDDEN_COLS.forEach((c) => summary.hideColumns(c));
+    applyHiddenState_(summary, prevHidden);
     summary.setHiddenGridlines(true);
 
     // サマリは全ての列が勤務表と契約から自動で作られるため、シートごと保護する
@@ -617,7 +771,7 @@ const SheetLayout = (function () {
   return {
     SUMMARY_SHEET, CONFIG_SHEET, DATA_START_ROW, MAX_DAYS, TOTAL_COLS,
     COL, CONTRACT_COLS, WIDTH, DAY_WIDTH, BG, THEME, HEADERS, PROTECT_SUMMARY, PROTECT_HEADER,
-    DAY_FONT_SIZE, HIDDEN_COLS, NAMED_STD_HOURS, OVERTIME_ALERT,
+    DAY_FONT_SIZE, ROW_HEIGHT, HIDDEN_COLS, NAMED_STD_HOURS, OVERTIME_ALERT, HEADER_ROWS,
     colLetter, roundedByCell, formulasFor, yearRowFor, styleYearRows, styleForecastCells, groupRows,
     applyFormats, applyRoundingColors, applyOvertimeAlert, choiceColorRules, roundingChoices,
     protectRanges, trim, setup,
