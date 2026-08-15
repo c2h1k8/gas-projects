@@ -33,14 +33,29 @@ const Contracts = (function () {
   /**
    * 丸め単位の選択肢。「何円きざみで丸めるか」を表します。
    *
-   * 単位で割って丸め、掛け戻すことで桁を変えます。
+   * 数字だけをプルダウンに並べても何の単位か分からないため、
+   * 「1円単位」のような言葉で持ちます。数式側は「円単位」を取り除いて数値に戻し、
+   * その単位で割って丸め、掛け戻すことで桁を変えます。
    * ほとんどの契約は1円単位なので、よく使う順に並べています。
    */
-  const UNIT_LIST = [1, 10, 100, 1000, 0.01];
+  const UNIT_SUFFIX = '円単位';
+  const UNIT_LIST = [1, 10, 100, 1000, 0.01].map((n) => `${n}${UNIT_SUFFIX}`);
   /** 未指定のときに使う単位 */
-  const UNIT_DEFAULT = 1;
-  /** 丸め単位の表示。数字だけだと何の単位か分からないので「円単位」を添える */
-  const UNIT_FORMAT = '0.##"円単位"';
+  const UNIT_DEFAULT = `1${UNIT_SUFFIX}`;
+
+  /**
+   * 丸め単位の表記を選択肢の言葉に揃えます。
+   * 数値で入力・保存されていた頃の値（1 や 1000）も読めるようにしています。
+   */
+  const normUnit = (v) => {
+    if (v === '' || v === null || v === undefined) return UNIT_DEFAULT;
+    const s = String(v).trim();
+    if (UNIT_LIST.indexOf(s) >= 0) return s;
+    const n = Number(s.replace(UNIT_SUFFIX, ''));
+    if (!isFinite(n) || n <= 0) return UNIT_DEFAULT;
+    const label = `${n}${UNIT_SUFFIX}`;
+    return UNIT_LIST.indexOf(label) >= 0 ? label : UNIT_DEFAULT;
+  };
 
   /** 列（1始まり） */
   const COL = {
@@ -311,6 +326,8 @@ const Contracts = (function () {
         row[COL.RATE - 1] = toRateInput(row[COL.RATE - 1]);
         // 「精算」列を足す前に入力された契約は、下限・上限の有無から補う
         row[COL.SETTLE - 1] = normSettle(row);
+        // 数値で入っていた丸め単位を「1円単位」のような言葉へ直す
+        [COL.UNIT_ADJ, COL.UNIT_PAY].forEach((c) => { row[c - 1] = normUnit(row[c - 1]); });
         return row;
       });
       sheet.getRange(2, 1, normalized.length, WIDTH).setValues(normalized);
@@ -329,7 +346,7 @@ const Contracts = (function () {
     sheet.getRange(2, COL.ROUND_ADJ, rowCount, 1).setHorizontalAlignment('center');
     sheet.getRange(2, COL.ROUND_PAY, rowCount, 1).setHorizontalAlignment('center');
     [COL.UNIT_ADJ, COL.UNIT_PAY].forEach((c) => {
-      sheet.getRange(2, c, rowCount, 1).setNumberFormat(UNIT_FORMAT).setHorizontalAlignment('center');
+      sheet.getRange(2, c, rowCount, 1).setNumberFormat('@').setHorizontalAlignment('center');
     });
 
     // 時間単価は自動計算。入力欄と色を分けたうえで、数式を入れ直す
@@ -397,9 +414,9 @@ const Contracts = (function () {
         rate: normRate(v[COL.RATE - 1]),
         // 端数処理と丸め単位は超過控除と支払で別に持つ。精算なしなら超過控除側は使わない
         roundingAdj: settle ? String(v[COL.ROUND_ADJ - 1] || ROUNDING.DOWN) : '',
-        unitAdj: settle ? (Number(v[COL.UNIT_ADJ - 1]) || UNIT_DEFAULT) : '',
+        unitAdj: settle ? normUnit(v[COL.UNIT_ADJ - 1]) : '',
         roundingPay: String(v[COL.ROUND_PAY - 1] || ROUNDING.DOWN),
-        unitPay: Number(v[COL.UNIT_PAY - 1]) || UNIT_DEFAULT,
+        unitPay: normUnit(v[COL.UNIT_PAY - 1]),
       });
     });
     list.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
@@ -425,7 +442,7 @@ const Contracts = (function () {
 
   return {
     SHEET, COL, WIDTH, COL_WIDTH, COMPUTED_COLS, SETTLE, SETTLE_LIST, ROUNDING, ROUNDING_LIST,
-    UNIT_LIST, UNIT_DEFAULT, UNIT_FORMAT,
+    UNIT_LIST, UNIT_DEFAULT, UNIT_SUFFIX, normUnit,
     HEADERS, REQUIRED_ALWAYS, REQUIRED_IF_SETTLE, inputRanges_, hourlyFormula_,
     RATE_FORMAT, setup, load, find, normYm, normRate, toRateInput, normSettle,
   };
