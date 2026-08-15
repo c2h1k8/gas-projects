@@ -31,4 +31,6 @@ household-account/LineUtil.js
 attendance-summary/DateUtils.js
 attendance-summary/Props.js
 attendance-summary/CoreUtils.js
+attendance-summary/LoadingUi.js
+attendance-summary/Loading.html
 .DS_Store

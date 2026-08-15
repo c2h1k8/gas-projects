@@ -131,6 +131,7 @@ const SummaryService = (function () {
   const writeRows_ = (sheet, rows) => {
     const values = [];
     const colors = [];
+    const links = [];        // 勤務表へのリンク（値として埋めるので数式にはしない）
     const yearRows = [];     // 年計行の行番号
     const forecastRows = []; // 見込みで計算している月の行番号
     const groups = [];       // 折りたたむ月の範囲
@@ -147,6 +148,7 @@ const SummaryService = (function () {
       const headerRow = START + values.length;
       values.push(new Array(SheetLayout.TOTAL_COLS).fill('')); // 中身は月の行番号が決まってから入れる
       colors.push(blankDays);
+      links.push(SheetLayout.linkValues(''));
       yearRows.push(headerRow);
 
       const from = START + values.length;
@@ -155,6 +157,7 @@ const SummaryService = (function () {
         if (rows[k].ym >= nowYm) forecastRows.push(START + values.length);
         values.push(monthCells_(rows[k], START + values.length));
         colors.push(rows[k].dayColors);
+        links.push(SheetLayout.linkValues(rows[k].meta.fileId));
       }
       const to = START + values.length - 1;
 
@@ -165,6 +168,12 @@ const SummaryService = (function () {
       i = j;
     }
 
+    // 前回の書式を一度落とす。
+    // 行の位置が変わると、古い塗り（年計行のグレーなど）が別の行に残って見えるため。
+    // 必要な書式はこの後すべて当て直すので、消してから組み立てる。
+    const formatted = sheet.getMaxRows() - START + 1;
+    if (formatted > 0) sheet.getRange(START, 1, formatted, SheetLayout.TOTAL_COLS).clearFormat();
+
     if (values.length) {
       const need = START + values.length - 1;
       if (sheet.getMaxRows() < need) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
@@ -172,10 +181,15 @@ const SummaryService = (function () {
       // 書式を先にあてる。年月は '2026/08' が日付に変換されてしまうため、
       // 文字列書式にしてから値を入れる必要がある。
       SheetLayout.applyFormats(sheet, values.length);
+      // 行を少し高くして余白をとる（詰まって見えるのを防ぐ）
+      sheet.setRowHeights(START, values.length, SheetLayout.ROW_HEIGHT);
       sheet.getRange(START, 1, values.length, SheetLayout.TOTAL_COLS).setValues(values);
       sheet.getRange(START, COL.DAY_START, values.length, DAYS).setBackgrounds(colors);
+      sheet.getRange(START, COL.LINK_OPEN, values.length, links[0].length).setRichTextValues(links);
       SheetLayout.styleYearRows(sheet, yearRows);
       SheetLayout.styleForecastCells(sheet, forecastRows);
+      // 残業の警告色は、月の行と年計行で当て方を変えるので行の並びが決まってから
+      SheetLayout.applyOvertimeAlert(sheet, groups, yearRows);
     }
 
     // 表の下に空行を残さない（どこまでが表か分かるようにする）
@@ -186,9 +200,13 @@ const SummaryService = (function () {
   /**
    * サマリを更新します。
    * @param full trueなら索引を作り直し、全ての勤務表を読み直す
+   * @param onProgress 進捗を知らせる関数（任意）。メニューからの実行でだけ渡す。
+   *   トリガからの実行では画面が無いので渡さない。
    * @return { months, read, skipped, kept, noContract, scanned } 件数
    */
-  const refresh = (full = false) => {
+  const refresh = (full = false, onProgress) => {
+    const report = (msg) => { if (onProgress) onProgress(msg); };
+    report('設定を読み込んでいます…');
     const cfg = Config.load();
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = getSheet_(ss);
@@ -203,6 +221,7 @@ const SummaryService = (function () {
     let dataById = {};
     let scanned = false;
     if (FileIndex.needsScan(cfg, index, full)) {
+      report('勤務表フォルダを調べています…');
       const r = FileIndex.scan(cfg, ss.getId());
       index = r.index;
       metaById = r.metaById;
@@ -211,11 +230,14 @@ const SummaryService = (function () {
     }
 
     const nowYm = Timesheet.ym(new Date());
-    const months = Object.keys(index.months);
+    // 進捗を古い月から順に見せたいので並べ替える
+    const months = Object.keys(index.months).sort();
     const result = { months: months.length, read: 0, skipped: 0, kept: 0, noContract: 0, scanned };
     const merged = {};
 
-    months.forEach((ym) => {
+    months.forEach((ym, idx) => {
+      const label = `${ym.slice(0, 4)}/${ym.slice(4)}`;
+      report(`${label} を確認しています…（${idx + 1}/${months.length}）`);
       const entry = index.months[ym];
       const prev = byYm[ym];
       // 当月・未来月は日付が進むだけで実績範囲が変わるため、更新が無くても読み直す
@@ -245,6 +267,7 @@ const SummaryService = (function () {
         return;
       }
 
+      report(`${label} の勤務表を読み込んでいます…（${idx + 1}/${months.length}）`);
       const data = dataById[entry.id] || Timesheet.readMonth(entry.id, cfg);
       if (!data) {
         if (prev) { merged[ym] = prev; result.kept++; }
@@ -266,12 +289,14 @@ const SummaryService = (function () {
     rows.sort((a, b) => (a.ym < b.ym ? 1 : a.ym > b.ym ? -1 : 0)); // 新しい月が上
 
     // 契約は毎回引き直す（契約シートを直したら全ての月に反映させたいため）
+    report('契約を反映しています…');
     const contracts = Contracts.load();
     rows.forEach((r) => {
       r.contract = Contracts.find(contracts, r.ym);
       if (!r.contract) result.noContract++;
     });
 
+    report(`シートへ書き込んでいます…（${rows.length}ヶ月）`);
     writeRows_(sheet, rows);
     Logger.log('[SummaryService] 索引%sヶ月 / 走査%s / 読込%s / スキップ%s / 据置%s / 契約なし%s → %s行',
       result.months, scanned ? 'あり' : 'なし', result.read, result.skipped, result.kept, result.noContract, rows.length);
