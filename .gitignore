@@ -1,4 +1,5 @@
 .clasp.json
+scripts/clasp-script-ids.json
 node_modules/
 household-account/823_properties.js
 notion-checked-time/properties.js
@@ -27,4 +28,7 @@ household-account/DateUtils.js
 household-account/GoogleApi.js
 household-account/SpreadUtils.js
 household-account/LineUtil.js
+attendance-summary/DateUtils.js
+attendance-summary/Props.js
+attendance-summary/CoreUtils.js
 .DS_Store
