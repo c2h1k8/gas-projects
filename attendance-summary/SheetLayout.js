@@ -101,8 +101,8 @@ const SheetLayout = (function () {
     [COL.ADJUST]: 88,
     [COL.REVENUE]: 92,
     [COL.PAYMENT]: 96,
-    [COL.LINK_OPEN]: 58,
-    [COL.LINK_XLSX]: 96,
+    [COL.LINK_OPEN]: 52,
+    [COL.LINK_XLSX]: 52,
     [COL.FILE_CREATED]: 118,
     [COL.FILE_UPDATED]: 118,
     [COL.IMPORTED_AT]: 118,
@@ -276,9 +276,9 @@ const SheetLayout = (function () {
     h[COL.REVENUE] = '売上';
     h[COL.PAYMENT] = '支払額';
     h[COL.LINK_OPEN] = '開く';
-    h[COL.LINK_XLSX] = 'ダウンロード';
-    h[COL.FILE_CREATED] = '作成日';
-    h[COL.FILE_UPDATED] = '最終更新';
+    h[COL.LINK_XLSX] = 'DL';
+    h[COL.FILE_CREATED] = '作成日時';
+    h[COL.FILE_UPDATED] = '最終更新日時';
     h[COL.IMPORTED_AT] = '取込日時';
     h[COL.FILE_ID] = 'ファイルID';
     for (let d = 1; d <= MAX_DAYS; d++) h[COL.DAY_START + d - 1] = String(d);
@@ -381,13 +381,33 @@ const SheetLayout = (function () {
     // 支払額＝売上×還元率（手取りとして支払われるはずの額）
     f[COL.PAYMENT] = `=IF(OR($${L.REVENUE}${r}="",$${L.RATE}${r}=""),"",${rounded(`$${L.REVENUE}${r}*$${L.RATE}${r}`, r, COL.ROUND_PAY, COL.UNIT_PAY)})`;
 
-    // 勤務表へのリンク（以下は行内で完結するので順序は関係ない）。ファイルIDから組み立てるので、取り込み直しても貼り直しが要らない
-    const id = `$${L.FILE_ID}${r}`;
-    f[COL.LINK_OPEN] = `=IF(${id}="","",HYPERLINK("${SS_URL}"&${id}&"/edit","開く"))`;
-    // xlsx形式でのダウンロード。スプレッドシートのエクスポートURLで、押すとその場で落ちてくる
-    f[COL.LINK_XLSX] = `=IF(${id}="","",HYPERLINK("${SS_URL}"&${id}&"/export?format=xlsx","ダウンロード"))`;
-
     return f;
+  };
+
+  /**
+   * リンクの表示。見出しに「開く」「ダウンロード」と書いてあるので、
+   * セルはアイコンだけにして列幅を詰める。
+   */
+  const LINK_LABEL = { open: '🔗', xlsx: '📥' };
+
+  /**
+   * 勤務表へのリンクをセルの値として作ります。
+   *
+   * HYPERLINK関数で作ると、クリックしたときにセルが選択されて数式バーに式が出てしまい、
+   * リンクそのものを押しづらくなります。値にリンクを埋め込めば、文字を押すだけで辿れます。
+   *
+   * @param fileId 勤務表のファイルID。空ならリンクを作らない
+   * @return [開く, ダウンロード] のリッチテキスト
+   */
+  const linkValues = (fileId) => {
+    const blank = () => SpreadsheetApp.newRichTextValue().setText('').build();
+    if (!fileId) return [blank(), blank()];
+    const url = `${SS_URL}${fileId}`;
+    const link = (text, href) => SpreadsheetApp.newRichTextValue().setText(text).setLinkUrl(href).build();
+    return [
+      link(LINK_LABEL.open, `${url}/edit`),
+      link(LINK_LABEL.xlsx, `${url}/export?format=xlsx`),
+    ];
   };
 
   /**
@@ -487,7 +507,7 @@ const SheetLayout = (function () {
     at(COL.HOURLY).setNumberFormat('#,##0.#');
     at(COL.DIFF_H).setNumberFormat('0.00');
     at(COL.ADJUST, COL.PAYMENT - COL.ADJUST + 1).setNumberFormat('#,##0');
-    at(COL.FILE_CREATED, 3).setNumberFormat('yyyy/MM/dd HH:mm');
+    at(COL.FILE_CREATED, 3).setNumberFormat('yyyy/MM/dd HH:mm').setHorizontalAlignment('center');
     at(COL.FILE_ID).setNumberFormat('@');
     at(COL.DAY_START, MAX_DAYS).setNumberFormat('0.00').setFontSize(DAY_FONT_SIZE);
     // リンクは既定の青・既定サイズだと浮くので、メタ列の文字サイズに揃えて色を当て直す
@@ -507,6 +527,12 @@ const SheetLayout = (function () {
     // 行の区切りは細い横罫だけ。塗り分けないぶん、行が追えるようにする
     sheet.getRange(DATA_START_ROW, 1, rowCount, TOTAL_COLS)
       .setBorder(null, null, null, null, null, true, THEME.ROW_LINE, SpreadsheetApp.BorderStyle.SOLID);
+
+    // 先に縦罫をすべて消す。ブロックの区切りが変わったとき、前の位置に引いた線が
+    // 残って「同じまとまりの中に線がある」状態になるため。
+    // 横罫（行の区切り）とアクセント罫は上下方向なので、ここでは触らない。
+    sheet.getRange(1, 1, rowCount + HEADER_ROWS, TOTAL_COLS)
+      .setBorder(null, false, null, false, false, null);
 
     // ブロックの境目に縦線を入れる（見出しから本文までを通す）
     BLOCK_STARTS().forEach((c) => {
@@ -673,12 +699,8 @@ const SheetLayout = (function () {
     summary.getRange(1, 1, 1, TOTAL_COLS)
       .setBackground(THEME.HEADER_GROUP).setFontColor(THEME.HEADER_GROUP_TEXT).setFontSize(9);
 
-    // ブロック名は横に結合し、下にアクセント罫を敷く
-    groups.forEach((g) => {
-      const cell = summary.getRange(1, g.from, 1, g.to - g.from + 1);
-      cell.merge();
-      cell.setBorder(null, null, true, null, null, null, g.accent, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-    });
+    // ブロック名は横に結合する
+    groups.forEach((g) => summary.getRange(1, g.from, 1, g.to - g.from + 1).merge());
 
     // 年月と日別は2段ぶんを縦に結合して、番号や見出しが常に見えるようにする
     // 年月と契約はどの月の行かを示すもので、ブロックには属さない
@@ -693,7 +715,17 @@ const SheetLayout = (function () {
       const cell = summary.getRange(1, m.col, HEADER_ROWS, 1);
       cell.merge();
       cell.setBackground(THEME.HEADER_AUTO).setFontColor(THEME.HEADER_TEXT).setFontSize(m.size);
-      cell.setBorder(null, null, true, null, null, null, m.accent, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+    });
+
+    // アクセント罫は見出しの一番下に揃える。
+    // ブロック名の下（2段の間）と2段目の下に分かれていると、同じ意味の線が
+    // 高さ違いで散らばって見えるため、2段まとめた範囲の下端に引く。
+    const accents = [{ from: COL.YM, to: COL.CONTRACT, accent: THEME.ACCENT_SUM }]
+      .concat(groups.map((g) => ({ from: g.from, to: g.to, accent: g.accent })))
+      .concat([{ from: COL.DAY_START, to: TOTAL_COLS, accent: THEME.ACCENT_DAY }]);
+    accents.forEach((a) => {
+      summary.getRange(1, a.from, HEADER_ROWS, a.to - a.from + 1)
+        .setBorder(null, null, true, null, null, null, a.accent, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
     });
 
     summary.setRowHeight(1, 24);
@@ -706,6 +738,8 @@ const SheetLayout = (function () {
     note(COL.WORK_H, '精算の元になる時間。過去月は実績、進行中の月は着地見込み（斜体で表示）。');
     note(COL.OVERTIME, '実績時間 −（稼働日数 × 所定労働時間）。\n進行中の月は「今日までの残業」で、着地見込みではありません。');
     note(COL.DIFF_H, '精算幅からのはみ出し。稼働時間を元に計算する。');
+    note(COL.LINK_OPEN, 'その月の勤務表を開きます。');
+    note(COL.LINK_XLSX, 'ダウンロード。その月の勤務表をExcel（xlsx）で保存します。開かずにそのまま落ちてきます。');
 
     // 年月と見出しを固定して、右へスクロールしてもどの月か分かるようにする
     summary.setFrozenRows(HEADER_ROWS);
@@ -772,7 +806,7 @@ const SheetLayout = (function () {
     SUMMARY_SHEET, CONFIG_SHEET, DATA_START_ROW, MAX_DAYS, TOTAL_COLS,
     COL, CONTRACT_COLS, WIDTH, DAY_WIDTH, BG, THEME, HEADERS, PROTECT_SUMMARY, PROTECT_HEADER,
     DAY_FONT_SIZE, ROW_HEIGHT, HIDDEN_COLS, NAMED_STD_HOURS, OVERTIME_ALERT, HEADER_ROWS,
-    colLetter, roundedByCell, formulasFor, yearRowFor, styleYearRows, styleForecastCells, groupRows,
+    colLetter, roundedByCell, formulasFor, linkValues, LINK_LABEL, yearRowFor, styleYearRows, styleForecastCells, groupRows,
     applyFormats, applyRoundingColors, applyOvertimeAlert, choiceColorRules, roundingChoices,
     protectRanges, trim, setup,
   };

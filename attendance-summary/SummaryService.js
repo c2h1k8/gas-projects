@@ -131,6 +131,7 @@ const SummaryService = (function () {
   const writeRows_ = (sheet, rows) => {
     const values = [];
     const colors = [];
+    const links = [];        // 勤務表へのリンク（値として埋めるので数式にはしない）
     const yearRows = [];     // 年計行の行番号
     const forecastRows = []; // 見込みで計算している月の行番号
     const groups = [];       // 折りたたむ月の範囲
@@ -147,6 +148,7 @@ const SummaryService = (function () {
       const headerRow = START + values.length;
       values.push(new Array(SheetLayout.TOTAL_COLS).fill('')); // 中身は月の行番号が決まってから入れる
       colors.push(blankDays);
+      links.push(SheetLayout.linkValues(''));
       yearRows.push(headerRow);
 
       const from = START + values.length;
@@ -155,6 +157,7 @@ const SummaryService = (function () {
         if (rows[k].ym >= nowYm) forecastRows.push(START + values.length);
         values.push(monthCells_(rows[k], START + values.length));
         colors.push(rows[k].dayColors);
+        links.push(SheetLayout.linkValues(rows[k].meta.fileId));
       }
       const to = START + values.length - 1;
 
@@ -182,6 +185,7 @@ const SummaryService = (function () {
       sheet.setRowHeights(START, values.length, SheetLayout.ROW_HEIGHT);
       sheet.getRange(START, 1, values.length, SheetLayout.TOTAL_COLS).setValues(values);
       sheet.getRange(START, COL.DAY_START, values.length, DAYS).setBackgrounds(colors);
+      sheet.getRange(START, COL.LINK_OPEN, values.length, links[0].length).setRichTextValues(links);
       SheetLayout.styleYearRows(sheet, yearRows);
       SheetLayout.styleForecastCells(sheet, forecastRows);
       // 残業の警告色は、月の行と年計行で当て方を変えるので行の並びが決まってから
