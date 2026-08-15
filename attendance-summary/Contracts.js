@@ -31,12 +31,16 @@ const Contracts = (function () {
   const ROUNDING_LIST = [ROUNDING.DOWN, ROUNDING.UP, ROUNDING.HALF];
 
   /**
-   * 丸め単位の選択肢。
-   * 単位で割って丸め、掛け戻すことで桁を変えます。1＝円単位、1000＝千円単位、0.01＝銭単位。
+   * 丸め単位の選択肢。「何円きざみで丸めるか」を表します。
+   *
+   * 単位で割って丸め、掛け戻すことで桁を変えます。
+   * ほとんどの契約は1円単位なので、よく使う順に並べています。
    */
-  const UNIT_LIST = [0.01, 0.1, 1, 10, 100, 1000];
+  const UNIT_LIST = [1, 10, 100, 1000, 0.01];
   /** 未指定のときに使う単位 */
   const UNIT_DEFAULT = 1;
+  /** 丸め単位の表示。数字だけだと何の単位か分からないので「円単位」を添える */
+  const UNIT_FORMAT = '0.##"円単位"';
 
   /** 列（1始まり） */
   const COL = {
@@ -81,12 +85,14 @@ const Contracts = (function () {
     '【精算ありなら必須】精算幅の上限。これを上回ると超過',
     '【精算ありなら必須】時間単価の分母。月額単価÷基準時間が超過・控除の時間単価になる',
     `【精算ありなら必須】${ROUNDING_LIST.join(' / ')}。超過控除単価と精算額の端数に適用する`,
-    `【精算ありなら必須】どの桁で丸めるか。${UNIT_LIST.join(' / ')} から選ぶ（1＝円単位、1000＝千円単位、0.01＝銭単位）`,
+    '【精算ありなら必須】何円きざみで丸めるか。通常は「1円単位」。'
+      + '契約書に「千円未満切り捨て」とあれば1000、「百円単位」とあれば100を選ぶ',
     '【自動計算】月額単価÷基準時間を端数処理した、上限超過と下限割れの両方に使う単価。契約書の超過単価と一致するか確認する欄',
     '【必須】売上に対する支払いの割合。支払額＝売上×還元率。70% なら「70」と入力する（％記号は不要）',
     `【必須】${ROUNDING_LIST.join(' / ')}。支払額（売上×還元率）の端数に適用する。`
       + '超過控除とは別に決められるよう列を分けている',
-    `【必須】どの桁で丸めるか。${UNIT_LIST.join(' / ')} から選ぶ（1＝円単位、1000＝千円単位）`,
+    '【必須】何円きざみで丸めるか。通常は「1円単位」。'
+      + '契約書に「千円未満切り捨て」とあれば1000を選ぶ',
   ];
 
   /**
@@ -323,7 +329,7 @@ const Contracts = (function () {
     sheet.getRange(2, COL.ROUND_ADJ, rowCount, 1).setHorizontalAlignment('center');
     sheet.getRange(2, COL.ROUND_PAY, rowCount, 1).setHorizontalAlignment('center');
     [COL.UNIT_ADJ, COL.UNIT_PAY].forEach((c) => {
-      sheet.getRange(2, c, rowCount, 1).setNumberFormat('0.##').setHorizontalAlignment('center');
+      sheet.getRange(2, c, rowCount, 1).setNumberFormat(UNIT_FORMAT).setHorizontalAlignment('center');
     });
 
     // 時間単価は自動計算。入力欄と色を分けたうえで、数式を入れ直す
@@ -419,7 +425,7 @@ const Contracts = (function () {
 
   return {
     SHEET, COL, WIDTH, COL_WIDTH, COMPUTED_COLS, SETTLE, SETTLE_LIST, ROUNDING, ROUNDING_LIST,
-    UNIT_LIST, UNIT_DEFAULT,
+    UNIT_LIST, UNIT_DEFAULT, UNIT_FORMAT,
     HEADERS, REQUIRED_ALWAYS, REQUIRED_IF_SETTLE, inputRanges_, hourlyFormula_,
     RATE_FORMAT, setup, load, find, normYm, normRate, toRateInput, normSettle,
   };

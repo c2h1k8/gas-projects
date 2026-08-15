@@ -431,11 +431,11 @@ const SheetLayout = (function () {
     at(COL.MONTHLY).setNumberFormat('#,##0');
     at(COL.LOWER, 3).setNumberFormat('0.00');
     at(COL.ROUND_ADJ).setNumberFormat('@');
-    at(COL.UNIT_ADJ).setNumberFormat('0.##');
+    at(COL.UNIT_ADJ).setNumberFormat(Contracts.UNIT_FORMAT);
     // サマリは計算に使う割合（0.7）を持つのでパーセント書式でよい（入力欄ではないため）
     at(COL.RATE).setNumberFormat('0%');
     at(COL.ROUND_PAY).setNumberFormat('@');
-    at(COL.UNIT_PAY).setNumberFormat('0.##');
+    at(COL.UNIT_PAY).setNumberFormat(Contracts.UNIT_FORMAT);
     // 時間単価は割り切れない契約もあるため小数1桁まで見せる
     at(COL.HOURLY).setNumberFormat('#,##0.#');
     at(COL.DIFF_H).setNumberFormat('0.00');
