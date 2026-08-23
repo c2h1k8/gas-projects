@@ -14,9 +14,6 @@ const PKeys = {
   /** メール解析用マスク情報（JSON） */
   MAIL_AI_MASK: 'MAIL_AI_MASK',
 
-  /** GitHubトークン */
-  GITHUB_TOKEN: 'GITHUB_TOKEN',
-
   /** 家計簿DB(money API) のベースURL 例: https://your-money-api.example.com */
   MONEY_API_URL: 'MONEY_API_URL',
   /** 家計簿DB(money API) の Bearer トークン */

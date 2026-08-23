@@ -41,31 +41,6 @@ const NotifyCards = (() => {
 
   return {
     /**
-     * タスク通知。
-     * @param {{overdue, dueToday, allDone, afternoon}} p  overdue/dueToday は文字列配列
-     */
-    tasks: ({ overdue, dueToday, allDone, afternoon }) => {
-      if (allDone) {
-        return {
-          type: 'bubble',
-          body: {
-            type: 'box', layout: 'vertical', paddingAll: 'lg', spacing: 'sm',
-            contents: [text(`✓ ${afternoon ? '本日もお疲れ様でした' : '未完了タスクなし'}`, { weight: 'bold', size: 'md', color: GREEN, wrap: true })],
-          },
-        };
-      }
-      const body = [];
-      const section = (title, color, items) => {
-        body.push(text(title, { weight: 'bold', size: 'sm', color, margin: body.length ? 'md' : 'none' }));
-        items.forEach((t) => body.push(text(`• ${t}`, { size: 'sm', color: DARK, wrap: true, margin: 'sm' })));
-      };
-      if (overdue && overdue.length) section('期限切れ', RED, overdue);
-      if (dueToday && dueToday.length) section('本日まで', afternoon ? RED : ORANGE, dueToday);
-      const headColor = (overdue && overdue.length) ? RED : ORANGE;
-      return shell(headColor, 'タスク', body);
-    },
-
-    /**
      * 家計簿 未登録通知。
      * @param {Array<{date, amount, sub}>} rows
      */
