@@ -152,24 +152,11 @@ const MoneyApi = (() => {
     try { return JSON.parse(r.text) || {}; } catch (e) { return {}; }
   };
 
-  /**
-   * 固定費 自動登録の定義一覧を取得する（旧スプレッドシート「固定費自動登録」の代替）。
-   * money 側（マスタ管理タブ）で編集した定義を読み、GAS が対象日に登録する。
-   * @return {Array<object>} [{id,enabled,type,title,amount,category,payee,methodPay,
-   *   note,expenseRatio,months,day,bizAdjust,yearInterval,yearAnchor,validFrom,validTo,createdYm,posted,skipped}]
-   */
-  const getFixedCosts = () => {
-    const r = _request('get', '/api/fixed-costs');
-    if (!r || r.code < 200 || r.code >= 300) return [];
-    try { return JSON.parse(r.text) || []; } catch (e) { return []; }
-  };
-
   return {
     registerSpending, registerIncome,
     searchSpending, searchIncome,
     updateSpending, updateIncome,
     deleteSpending, deleteIncome,
     getMasters,
-    getFixedCosts,
   };
 })();

@@ -41,31 +41,6 @@ const NotifyCards = (() => {
 
   return {
     /**
-     * 家計簿 未登録通知。
-     * @param {Array<{date, amount, sub}>} rows
-     */
-    unregistered: (rows) => {
-      const body = [];
-      rows.forEach((r, i) => {
-        if (i > 0) body.push(sep('sm'));
-        body.push(entry(r.date, r.amount, r.sub, ORANGE));
-      });
-      return shell(ORANGE, `家計簿 未登録（${rows.length}件）`, body);
-    },
-
-    /**
-     * 固定費 自動登録。
-     * @param {Array<{title, amount}>} rows
-     */
-    fixedCost: (rows) => {
-      const total = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
-      const body = rows.map((r) => moneyRow(r.title, r.amount));
-      body.push(sep());
-      body.push(moneyRow('合計', total, GREEN));
-      return shell(GREEN, `固定費を登録（${rows.length}件）`, body);
-    },
-
-    /**
      * メール自動登録 結果（1カード集約）。
      * @param {{success, skip, fail}} p  各 [{label, amount, sub}]
      */
