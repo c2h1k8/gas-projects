@@ -62,9 +62,7 @@ LINE のトークでメッセージを送るだけで、勤務表スプレッド
 
 - **支出登録 / 更新 / 削除**: スプレッドシートのボタンから money API へ反映（`OnClickRegist`, `OnClickSearchSpending`, `OnClickUpdateSpending` ほか）
 - **収入登録 / 更新 / 削除**: 同上（`OnClickSearchIncome`, `OnClickUpdateIncome` ほか）
-- **固定費自動登録**: 営業日・指定日基準で固定費を money API に自動登録（`CreateFixedCost`）
 - **メール AI 自動登録**: 受信メールを Gemini で解析し、個人情報をマスクしたうえで家計簿に自動登録（`CreateHouseholdAccountFromMailAI`）
-- **未登録通知**: 家計簿の未登録項目を LINE へ通知（`UnregisterdExpenseNotification`）
 - **マスタ更新**: 入力規則用リストの更新（`OnClickUpdateDataValidationList`）
 
 カテゴリ / お店 / 支払方法は「名前」で送信し、money API 側が既存マスタからコードを解決します（無ければ NULL＝確定時に割当）。連携ロジックは `048_家計簿DB連携.js`（`MoneyApi`）に集約。`MONEY_API_URL` / `MONEY_API_TOKEN`（スクリプトプロパティ）が未設定なら送信をスキップし、安全に無効化できます。
