@@ -153,13 +153,18 @@ const MoneyApi = (() => {
   };
 
   /**
-   * 固定費 自動登録の定義一覧を取得する（旧スプレッドシート「固定費自動登録」の代替）。
-   * money 側（マスタ管理タブ）で編集した定義を読み、GAS が対象日に登録する。
-   * @return {Array<object>} [{id,enabled,type,title,amount,category,payee,methodPay,
-   *   note,expenseRatio,months,day,bizAdjust,yearInterval,yearAnchor,validFrom,validTo,createdYm,posted,skipped}]
+   * **その日に登録すべき固定費**を取得する。
+   *
+   * 対象月・営業日/祝日補正・月末・有効期間・隔年・登録済み/スキップの判定は
+   * すべて money 側（server/schedule.py + server/holidays.py）で済んでいる。
+   * 以前はここで定義一覧を読んで GAS が判定していたが、祝日を Google Calendar API で
+   * 引いていたため、日本の営業日カレンダーの実装が money と GAS で2つに割れていた。
+   *
+   * @return {Array<object>} [{id,type,title,amount,category,payee,methodPay,note,
+   *   expenseRatio,dueDate('YYYY-MM-DD'),ym('YYYY-MM')}]
    */
-  const getFixedCosts = () => {
-    const r = _request('get', '/api/fixed-costs');
+  const getDueFixedCosts = () => {
+    const r = _request('get', '/api/fixed-costs/due');
     if (!r || r.code < 200 || r.code >= 300) return [];
     try { return JSON.parse(r.text) || []; } catch (e) { return []; }
   };
@@ -170,6 +175,6 @@ const MoneyApi = (() => {
     updateSpending, updateIncome,
     deleteSpending, deleteIncome,
     getMasters,
-    getFixedCosts,
+    getDueFixedCosts,
   };
 })();
