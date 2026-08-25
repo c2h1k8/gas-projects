@@ -67,6 +67,8 @@ LINE のトークでメッセージを送るだけで、勤務表スプレッド
 
 カテゴリ / お店 / 支払方法は「名前」で送信し、money API 側が既存マスタからコードを解決します（無ければ NULL＝確定時に割当）。連携ロジックは `048_家計簿DB連携.js`（`MoneyApi`）に集約。`MONEY_API_URL` / `MONEY_API_TOKEN`（スクリプトプロパティ）が未設定なら送信をスキップし、安全に無効化できます。
 
+LINE 通知（メール自動登録の結果）も **money API 経由で送信**します（`POST /api/notify/push`）。GAS から直接 LINE へ投げると money の送信履歴（`T_NOTIFY_LOG`）に載らず、Push 枠（チャンネル単位で月 200 通）の残枠表示が実際より多く見えるためです。カードの組み立ては GAS 側（`NotifyCards.js`）、送信と記録は money 側。**money へ送れなかった時だけ LINE へ直送**します（`852_LocalUtils.js`）＝その 1 通は残枠の勘定から漏れますが、money が落ちている時こそ「登録が全件失敗した」通知が必要なためです。
+
 依存ライブラリ: `LineUtil`, `Parser`
 
 ### notion-checked-time — Notion チェック日時の自動記録

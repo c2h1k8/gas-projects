@@ -143,6 +143,24 @@ const MoneyApi = (() => {
   };
 
   /**
+   * LINE 通知を money 経由で1通送る（POST /api/notify/push）。
+   *
+   * 直接 LINE へ投げると money の T_NOTIFY_LOG に載らず、画面の残枠（チャンネル単位で
+   * 月200通）が実際より多く見える。送信そのものを money に任せて数える場所を1つに保つ。
+   * 送れなかった場合の直送は呼び出し側（LocalUtils）の判断。
+   * @param {string} kind T_NOTIFY_LOG.KIND（サーバの許可リストにあるもの）
+   * @param {object} message LINE のメッセージオブジェクト（text / flex）
+   * @return {boolean} money 経由で送れたか
+   */
+  const pushNotify = (kind, message, level = 'info') => {
+    const r = _request('post', '/api/notify/push', { kind, message, level });
+    if (!r) return false;
+    const ok = r.code >= 200 && r.code < 300;
+    Logger.log(`[MoneyApi] notify ${kind} -> ${r.code}${ok ? '' : ' ' + r.text}`);
+    return ok;
+  };
+
+  /**
    * スプレッドシート マスタ更新用の名称リストを取得する。
    * @return {object} {spendingNames, incomeNames, categories, payees, methodPay}
    */
@@ -157,6 +175,6 @@ const MoneyApi = (() => {
     searchSpending, searchIncome,
     updateSpending, updateIncome,
     deleteSpending, deleteIncome,
-    getMasters,
+    getMasters, pushNotify,
   };
 })();
