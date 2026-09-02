@@ -1311,44 +1311,6 @@ const MainProc = (function () {
   }
 
   /**
-   * 時刻調整を行います。
-   * @param time 時刻（HHmm）
-   * @return 調整時刻
-   */
-  const roundTime = (time) => {
-    // 空、未入力の場合は何もしない
-    if (!time || '-' === time) return time;
-    const match = time.match(/^([\d]{2})[:]*([\d]{2})$/);
-    const hour = Number(match[1]);
-    const strHour = String(hour).padStart(2, "0");
-    const strMinutes = match[2];
-    const minutes = Number(strMinutes);
-    const roundUnit = Props.getValue(PKeys.ROUND_UNIT);
-    if (roundUnit == 0 || minutes === 0) {
-      // 調整なし or 00分ジャスト
-      return `${strHour}:${strMinutes}`;
-    }
-    const isRoundUp = roundUnit > 0;
-    const absRoundUnit = Math.abs(roundUnit);
-    const cnt = Math.trunc(60 / absRoundUnit);
-    for (let i = 1; i < cnt; i++) {
-      const tmpMinutes = absRoundUnit * i;
-      if ((isRoundUp && minutes <= tmpMinutes) || (!isRoundUp && minutes < tmpMinutes)) {
-        let roundedMinutes = tmpMinutes;
-        if (!isRoundUp) {
-          // 切り捨ての場合は一つ前の時間帯
-          roundedMinutes -= absRoundUnit;
-        }
-        return `${strHour}:${String(roundedMinutes).padStart(2, '0')}`;
-      }
-    }
-    if (isRoundUp) {
-      return `${String(hour + 1).padStart(2, "0")}:00`;
-    }
-    return `${strHour}:${String(absRoundUnit * (cnt - 1)).padStart(2, '0')}`;
-  }
-
-  /**
    * 登録した勤怠を1日分書き出します。
    * 書き出しの失敗で勤務表への登録を失敗させないため、例外は外に出しません。
    *
@@ -1474,9 +1436,6 @@ const MainProc = (function () {
           // 非営業日の場合は休日出勤に変更
           type = TYPE.HOLIDAY_WORKING;
         }
-        // 時刻切り上げ
-        start = roundTime(start);
-        end = roundTime(end);
         break;
     }
     const rowNo = date.getDate() + 12;
@@ -1815,9 +1774,12 @@ const MainProc = (function () {
     const year = date.getFullYear();
     sheet.getRange('A1').setValue(year);
     sheet.getRange('D1').setValue(nextMonthIndex + 1);
+    // 丸めは勤務表の数式が行う（実働 AD 列＝FLOOR(退社−出社−休憩, AL11)）。
+    // GAS はセルの計算結果を読むだけなので、ここで単位を書けば集計にもそのまま効く。
     const roundUnit = Props.getValue(PKeys.ROUND_UNIT_CALC);
-    sheet.getRange('AL9').setValue(roundUnit); // 開始時刻切上単位
+    sheet.getRange('AL9').setValue(roundUnit);  // 開始時刻切上単位
     sheet.getRange('AL10').setValue(roundUnit); // 終了時刻切捨単位
+    sheet.getRange('AL11').setValue(Props.getValue(PKeys.ROUND_UNIT_TOTAL)); // 実働（合計時刻）切捨単位
 
     const startTime = Props.getValue(PKeys.START_TIME_DEFAULT);
     const endTime = Props.getValue(PKeys.END_TIME_DEFAULT);

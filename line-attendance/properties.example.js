@@ -21,8 +21,8 @@ function setScriptProps() {
     [PKeys.SHEET_NAME_MAIN]: 'YOUR_SHEET_NAME_MAIN',
     [PKeys.START_TIME_DEFAULT]: '9:30',
     [PKeys.END_TIME_DEFAULT]: '18:30',
-    [PKeys.ROUND_UNIT]: 0,
-    [PKeys.ROUND_UNIT_CALC]: 30,
+    [PKeys.ROUND_UNIT_CALC]: 1,   // 勤務表 AL9/AL10（開始の切上・終了の切捨）。1＝丸めなし
+    [PKeys.ROUND_UNIT_TOTAL]: 30, // 勤務表 AL11（実働＝合計時刻の切捨）。1＝丸めなし
     // 有給休暇（入社日を設定すると自動付与。未設定なら有休管理を行わず休暇は欠勤で登録）
     [PKeys.PAID_LEAVE_JOIN_DATE]: 'YOUR_JOIN_DATE', // 'yyyy-MM-dd'
     [PKeys.PAID_LEAVE_EXPIRE_YEARS]: 2,
