@@ -20,10 +20,10 @@ const PKeys = {
   START_TIME_DEFAULT: 'START_TIME_DEFAULT',
   /** デフォルト退社時刻 */
   END_TIME_DEFAULT: 'END_TIME_DEFAULT',
-  /** タイムカード丸め単位 */
-  ROUND_UNIT: 'ROUND_UNIT',
-  /** 計算用丸め単位 */
+  /** 開始・終了時刻の丸め単位（分。勤務表のAL9=切上/AL10=切捨。1＝丸めなし） */
   ROUND_UNIT_CALC: 'ROUND_UNIT_CALC',
+  /** 実働（合計時刻）の切り捨て単位（分。勤務表のAL11。1＝丸めなし） */
+  ROUND_UNIT_TOTAL: 'ROUND_UNIT_TOTAL',
 
   /** 名字 */
   NAME_LAST: 'NAME_LAST',
