@@ -65,7 +65,7 @@ LINE のトークでメッセージを送るだけで、勤務表スプレッド
 - **メール AI 自動登録**: 受信メールを Gemini で解析し、個人情報をマスクしたうえで家計簿に自動登録（`CreateHouseholdAccountFromMailAI`）
 - **マスタ更新**: 入力規則用リストの更新（`OnClickUpdateDataValidationList`）
 
-カテゴリ / お店 / 支払方法は「名前」で送信し、money API 側が既存マスタからコードを解決します（無ければ NULL＝確定時に割当）。連携ロジックは `048_家計簿DB連携.js`（`MoneyApi`）に集約。`MONEY_API_URL` / `MONEY_API_TOKEN`（スクリプトプロパティ）が未設定なら送信をスキップし、安全に無効化できます。
+カテゴリ / お店 / 支払方法は「名前」で送信し、money API 側が既存マスタからコードを解決します（無ければ NULL＝確定時に割当）。**支出カテゴリと収入カテゴリは別のマスタ**です（money 側の `M_CODE_MASTER.KIND` が `EXPENSE_CATEGORY` / `INCOME_CATEGORY`）。収入は money 側でカテゴリが確定の必須項目なので、未カテゴリのまま登録すると未確認タブに残り続けます。マスタシートも列を分けて持ちます（D=支出カテゴリ / E=収入カテゴリ）。連携ロジックは `048_家計簿DB連携.js`（`MoneyApi`）に集約。`MONEY_API_URL` / `MONEY_API_TOKEN`（スクリプトプロパティ）が未設定なら送信をスキップし、安全に無効化できます。
 
 LINE 通知（メール自動登録の結果）も **money API 経由で送信**します（`POST /api/notify/push`）。GAS から直接 LINE へ投げると money の送信履歴（`T_NOTIFY_LOG`）に載らず、Push 枠（チャンネル単位で月 200 通）の残枠表示が実際より多く見えるためです。カードの組み立ては GAS 側（`NotifyCards.js`）、送信と記録は money 側。**money へ送れなかった時だけ LINE へ直送**します（`852_LocalUtils.js`）＝その 1 通は残枠の勘定から漏れますが、money が落ちている時こそ「登録が全件失敗した」通知が必要なためです。
 

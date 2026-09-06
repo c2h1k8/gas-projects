@@ -9,19 +9,24 @@ const MainProcIncome = (() => {
   const COL_ID = 3;
   const COL_TITLE = 4;
 
+  // 列の並びは「支出更新」と同じ（項目名→カテゴリ→日付→金額→…→備考）。
+  // money 側が収入を支出と同じ形にそろえたので、シートも読み替えの要らない並びにする。
   const IDX = {
     CHK: 0,
     ID: 1,
     TITLE: 2,
-    DATE: 3,
-    AMOUNT: 4,
+    CATEGORY: 3,
+    DATE: 4,
+    AMOUNT: 5,
+    NOTE: 6,
   };
 
   const RNG = {
-    TITLE: "H7",
-    UNFINISHED: "H8",
-    FROM: "H9",
-    TO: "H10",
+    TITLE: "J7",
+    CATEGORY: "J8",
+    UNFINISHED: "J9",
+    FROM: "J10",
+    TO: "J11",
   };
 
   // ===== Sheet helpers =====
@@ -60,9 +65,11 @@ const MainProcIncome = (() => {
   // シートの検索条件を money API のクエリ（+タイトル名フィルタ）に変換
   const buildQueryFromSheet = (sheet) => {
     const title = sheet.getRange(RNG.TITLE).getValue();
+    const category = sheet.getRange(RNG.CATEGORY).getValue();
     const unfinished = sheet.getRange(RNG.UNFINISHED).getValue();
     return {
       title: title || "",
+      category: category || "",
       confirmed: unfinished ? 0 : undefined, // 未完了＝未確認(CONFIRMED=0)
       from: fmtYmd(sheet.getRange(RNG.FROM).getValue()),
       to: fmtYmd(sheet.getRange(RNG.TO).getValue()),
@@ -71,13 +78,20 @@ const MainProcIncome = (() => {
 
   // ===== Output helpers =====  items: money API の /api/income items
   const mapItemsToRows = (items) =>
-    items.map((it) => [it.uuid, it.name, it.date, it.amount]);
+    items.map((it) => [
+      it.uuid,
+      it.name,
+      it.category || "",
+      it.date,
+      it.amount,
+      it.note || "",
+    ]);
 
   const sortRows = (rows) => {
-    // outData: [id, title, date, amount]
+    // outData: [id, title, category, date, amount, note]
     const sortMap = new Map();
-    sortMap.set(2, false); // 日付降順
-    sortMap.set(3, true); // 金額昇順
+    sortMap.set(3, false); // 日付降順
+    sortMap.set(4, true); // 金額昇順
     CoreUtils.sort(rows, sortMap);
   };
 
@@ -98,6 +112,7 @@ const MainProcIncome = (() => {
       from: q.from,
       to: q.to,
       title: q.title,
+      category: q.category,
       unfinished: q.confirmed === 0,
     });
     if (items.length === 0) {
@@ -122,16 +137,21 @@ const MainProcIncome = (() => {
     const id = row[IDX.ID];
     const rawTitle = row[IDX.TITLE];
     const amount = row[IDX.AMOUNT];
+    const category = row[IDX.CATEGORY];
+    const note = row[IDX.NOTE];
 
     const date = row[IDX.DATE] ? row[IDX.DATE] : new Date();
 
     const title = rawTitle;
 
+    // カテゴリ/備考も送る（カテゴリは名前でOK＝サーバが収入カテゴリのコードへ解決）
+    const payload = { name: title, date, amount, category, note };
+
     if (id) {
-      MoneyApi.updateIncome(id, { name: title, date, amount });
+      MoneyApi.updateIncome(id, payload);
     } else {
       // 新規は money API へ「未確認」で登録
-      MoneyApi.registerIncome({ name: title, date, amount });
+      MoneyApi.registerIncome(payload);
     }
   };
 

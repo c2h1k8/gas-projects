@@ -67,10 +67,17 @@ const MoneyApi = (() => {
       fixed_cost_id: fixedCostId || null, fixed_cost_ym: fixedCostYm || null,
     }, name);
 
-  /** 収入を「未確認」で登録する。 @return {string|null} uuid */
-  const registerIncome = ({ name, date, amount, fixedCostId, fixedCostYm }) =>
+  /**
+   * 収入を「未確認」で登録する。
+   * カテゴリは支出とは別のマスタ（KIND='INCOME_CATEGORY'）だが、支出と同じく
+   * 「名前」で送ればサーバが解決する。**未カテゴリだと money 側で確定できない**
+   * （確定の必須項目）ので、判っているものは必ず載せる。
+   * @return {string|null} uuid
+   */
+  const registerIncome = ({ name, date, amount, category, note, fixedCostId, fixedCostYm }) =>
     _register('income', {
       date: _fmtDate(date), name, amount,
+      category: category || null, note: note || null,
       fixed_cost_id: fixedCostId || null, fixed_cost_ym: fixedCostYm || null,
     }, name);
 
@@ -98,8 +105,9 @@ const MoneyApi = (() => {
   };
 
   /**
-   * 収入を検索する（DSL: POST /api/income/search）。名前/期間/未確認をサーバ側で絞り込む。
-   * @param {object} cond {title, from, to, unfinished}
+   * 収入を検索する（DSL: POST /api/income/search）。
+   * 名前/カテゴリ/期間/未確認を **すべてサーバ側で絞り込む**（支出と同じ形）。
+   * @param {object} cond {title, category, from, to, unfinished}
    * @return {Array<object>} /api/income items（日付降順・金額昇順）
    */
   const searchIncome = (cond) => {
@@ -108,6 +116,7 @@ const MoneyApi = (() => {
     if (cond.from) filters.push({ field: 'date', operator: 'gte', value: _fmtDate(cond.from) });
     if (cond.to) filters.push({ field: 'date', operator: 'lte', value: _fmtDate(cond.to) });
     if (cond.title) filters.push({ field: 'name', operator: 'eq', value: cond.title });
+    if (cond.category) filters.push({ field: 'category', operator: 'eq', value: cond.category });
     if (cond.unfinished) filters.push({ field: 'confirmed', operator: 'eq', value: 0 });
     const r = _request('post', '/api/income/search', { filters, sort: ['-date', 'amount'] });
     if (!r || r.code < 200 || r.code >= 300) return [];
@@ -127,9 +136,12 @@ const MoneyApi = (() => {
       category: category || null, method_pay: methodPay || null, payee: payee || null,
       url: url || null, note: note || null, expense_ratio: expenseRatio || 0,
     }, name);
-  /** 収入を更新する。@return {boolean} */
-  const updateIncome = (uuid, { name, date, amount }) =>
-    _update('income', uuid, { date: _fmtDate(date), name, amount }, name);
+  /** 収入を更新する（カテゴリは名前でOK＝サーバ解決）。@return {boolean} */
+  const updateIncome = (uuid, { name, date, amount, category, note }) =>
+    _update('income', uuid, {
+      date: _fmtDate(date), name, amount,
+      category: category || null, note: note || null,
+    }, name);
 
   /** 支出を削除する。@return {boolean} */
   const deleteSpending = (uuid) => {
@@ -162,7 +174,9 @@ const MoneyApi = (() => {
 
   /**
    * スプレッドシート マスタ更新用の名称リストを取得する。
-   * @return {object} {spendingNames, incomeNames, categories, payees, methodPay}
+   * categories は支出カテゴリ（KIND='EXPENSE_CATEGORY'）、incomeCategories は
+   * 収入カテゴリ（KIND='INCOME_CATEGORY'）＝軸が違う別マスタなので混ぜない。
+   * @return {object} {spendingNames, incomeNames, categories, incomeCategories, payees, methodPay}
    */
   const getMasters = () => {
     const r = _request('get', '/api/masters');

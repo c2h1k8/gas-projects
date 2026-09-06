@@ -48,7 +48,8 @@ const MainProcMaster = (() => {
     const byCol = {
       [C.TITLE_SPENDING]: spendingNames,
       [C.TITLE_INCOME]: m.incomeNames ?? [],
-      [C.CATEGORY]: m.categories ?? [],
+      [C.EXPENSE_CATEGORY]: m.categories ?? [],
+      [C.INCOME_CATEGORY]: m.incomeCategories ?? [],
       [C.PAYEE]: m.payees ?? [],
       [C.METHOD_PAY]: m.methodPay ?? [],
     };
