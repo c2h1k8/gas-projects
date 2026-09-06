@@ -17,16 +17,20 @@ const Constants = (function () {
         HEADER: 2,
         DATA: 3,
       },
+      // 収入カテゴリ(E)は支出カテゴリ(D)の隣。money 側の M_CODE_MASTER が
+      // KIND='EXPENSE_CATEGORY' / 'INCOME_CATEGORY' と軸を分けて持つのに合わせる
+      // （収入は未カテゴリだと money 側で確定できないので、選択肢がここに要る）。
       COL: {
         CHK_TARGET: 1,
         TITLE_SPENDING: 2,
         TITLE_INCOME: 3,
-        CATEGORY: 4,
-        PAYEE: 5,
-        METHOD_PAY: 6,
-        LINE_CATEGORY: 7,
-        LINE_METHOD_PAY: 8,
-        EXCEPT_WORD: 9,
+        EXPENSE_CATEGORY: 4,
+        INCOME_CATEGORY: 5,
+        PAYEE: 6,
+        METHOD_PAY: 7,
+        LINE_CATEGORY: 8,
+        LINE_METHOD_PAY: 9,
+        EXCEPT_WORD: 10,
       },
       RNG_NAME: {
         EXCEPT_WORD: '除外ワード',
