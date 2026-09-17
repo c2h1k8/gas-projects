@@ -262,13 +262,6 @@ function test_サマリー_週次() {
   _teardownTest_();
 }
 
-/** テスト: 月中サマリー通知 */
-function test_サマリー_月中() {
-  _setupTest_();
-  MainProc.notifyMidMonthSummary();
-  _teardownTest_();
-}
-
 /** テスト: 前月確定サマリー通知 */
 function test_サマリー_前月確定() {
   _setupTest_();
