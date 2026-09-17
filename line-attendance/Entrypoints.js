@@ -36,13 +36,6 @@ function checkAttendanceNight() {
 }
 
 /**
- * 月中サマリートリガー（毎月15日9時想定）。当月累計・残業・着地見込みを通知。
- */
-function summaryMidMonth() {
-  MainProc.notifyMidMonthSummary();
-}
-
-/**
  * 前月確定サマリートリガー（毎月1日9時想定）。確定した前月の総稼働・残業を通知。
  */
 function summaryPrevMonth() {

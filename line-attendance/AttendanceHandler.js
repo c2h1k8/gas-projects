@@ -920,7 +920,7 @@ const MainProc = (function () {
     LineManager.replyFlex(replyToken, '過去12ヶ月の推移', FlexCards.history({ title: '過去12ヶ月の推移', rows, footer }));
   }
 
-  // ===== 稼働サマリー通知（週次 / 月中 / 前月確定） =====
+  // ===== 稼働サマリー通知（週次 / 前月確定） =====
 
   /**
    * 指定日が属する週の月曜0時を返します。
@@ -1093,24 +1093,6 @@ const MainProc = (function () {
     pruneOldEntries(sent);
     sent.set(weekKey, data.signature);
     Props.setJson(PKeys.WEEKLY_SUMMARY_SENT, sent);
-  };
-
-  /**
-   * 月中サマリー（着地見込み）をLINEへプッシュします（月の中旬想定）。
-   * 当月累計・残業・着地見込みを通知。
-   */
-  const notifyMidMonthSummary = () => {
-    const now = new Date();
-    if (!getFileId(now)) return;
-    const month = getMonthSummaryData(now);
-    const metrics = [
-      { label: '当月累計', value: month.total },
-      { label: '残業', value: month.overtime, accent: true },
-    ];
-    if (month.forecast) metrics.push({ label: '着地見込み', value: month.forecast });
-    const title = '月中サマリー';
-    const subtitle = `${DateUtils.formatDate(now, 'yyyy年M月')}（${now.getDate()}日時点）`;
-    notifyFlex(title, FlexCards.summary({ title, subtitle, metrics }), `${subtitle} / ${JSON.stringify(metrics)}`);
   };
 
   /**
@@ -2301,10 +2283,6 @@ const MainProc = (function () {
      * 週次サマリーを当日基準で通知します（手動テスト用。自動送信は登録完了時に発火）。
      */
     notifyWeeklySummary: () => notifyWeeklySummary(),
-    /**
-     * 月中サマリーを通知します（時間主導トリガーから実行）。
-     */
-    notifyMidMonthSummary: () => notifyMidMonthSummary(),
     /**
      * 前月確定サマリーを通知します（時間主導トリガーから実行）。
      */
