@@ -81,6 +81,38 @@ const STEP_DIALOG_ACTIONS = (function () {
       finish: finishMonth_('作成'),
     },
 
+    // 年月を指定して作る（a.months＝['2025-04', …]。過去の月の工数を後から手で入れるときなど）
+    createMonths: {
+      plan: (a) => {
+        const months = a.months || [];
+        const title = months.length > 1 ? `${months[0]}〜${months[months.length - 1]} を作成` : `${months[0]} を作成`;
+        return {
+          title,
+          args: { months },
+          steps: [STEP.base, ...months.map((m) => ({ ...STEP.month(m), id: `month:${m}` })), STEP.summary],
+        };
+      },
+      step: (id, args, ctx) => {
+        if (!id.startsWith('month:')) return runMonthStep_(id, args, ctx);
+        const month = id.replace(/^month:/, '');
+        const { created } = MonthSheet.ensure(ss_(), MonthSheet.dateOf(month));
+        if (!created) return skipped(ctx, '作成済みのため何もしません');
+        ctx.created = true;
+        ctx.made = [...(ctx.made || []), month];
+        return done(ctx);
+      },
+      finish: (args, ctx) => {
+        const made = ctx.made || [];
+        const skippedCount = args.months.length - made.length;
+        if (!made.length) return { message: '指定した月はすべて作成済みです', open: args.months[0], autoClose: true };
+        return {
+          message: `${made.length}ヶ月分のシートを作成しました${skippedCount ? `（作成済みの${skippedCount}ヶ月は何もしていません）` : ''}`,
+          open: made[0],
+          autoClose: true,
+        };
+      },
+    },
+
     recreateMonth: {
       plan: () => {
         const month = MonthSheet.nameOf(new Date());

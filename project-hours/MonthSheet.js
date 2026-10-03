@@ -61,7 +61,7 @@ const MonthSheet = (function () {
     return summary + 1; // サマリが無ければ先頭（-1 + 1 = 0）
   };
 
-  /** 作成時の入力単位・案件の選び方・案件枠の数を返します（メタデータが無い古いシートは既定値）。 */
+  /** 作成時の入力単位・案件の選び方・案件枠の数を返します（メタデータが読めなければ既定値）。 */
   const settingsOf = (sheet) => {
     const meta = new Map(sheet.getDeveloperMetadata().map((m) => [m.getKey(), m.getValue()]));
     return {
@@ -217,6 +217,13 @@ const MonthSheet = (function () {
           .build());
     }
 
+    // 縦線は境目にだけ引く（日合計の右と、案件枠ごとの右。最後の枠の右が備考との境目）。
+    // 案件別集計の見出しは右へはみ出して表示するので、その行には案件枠の線を通さない
+    Style.rightLine(sheet.getRange(C.TOTAL_ROW, C.DAY_TOTAL, last - C.TOTAL_ROW + 1, 1));
+    for (let i = 0; i < slots; i++) {
+      Style.rightLine(sheet.getRange(C.AGG_FIRST_ROW, Layout.slotHoursCol(i), last - C.AGG_FIRST_ROW + 1, 1));
+    }
+
     setConditionalRules_(sheet, first, days, slots);
 
     // 集計欄と見出しの行、日付〜日合計の3列を固定する
@@ -240,22 +247,25 @@ const MonthSheet = (function () {
   };
 
   /**
-   * 案件別集計の数式。マスタの各案件（コード x・案件名 y・略称 z）について全枠の工数を合計し、
+   * 案件別集計の数式。マスタの各案件（コード x・案件名 y・略称 z。表示順に並べる）について全枠の工数を合計し、
    * 工数がある案件だけを「コード：略称（無ければ案件名）, 時:分」の組で横に並べ、
    * 案件枠の数で次の行へ折り返す（1つの数式が展開する。収まらない分は切り捨てる）。
    */
   const aggregateFormula_ = (unit, pick, slots, first, last) => {
     const sep = Layout.LABEL_SEPARATOR;
-    const { codes, names, shorts } = MasterSheet.formulaRanges();
-    const only = (r) => `FILTER(${r}, ${codes}<>"")`;
+    const { codes, names, shorts, orders } = MasterSheet.formulaRanges();
+    // 案件は表示順の小さい順に並べる（空欄は後ろに、同じ表示順・空欄どうしはマスタの順）
+    const only = (r) => `srt(FILTER(${r}, ${codes}<>""))`;
     const sums = sumExpr_('', pick, slots, { code: 'x', name: 'y', short: 'z' }, first, last);
-    return `=IFERROR(LET(c, ${only(codes)}, n, ${only(names)}, s, ${only(shorts)}, `
+    return `=IFERROR(LET(o, FILTER(${orders}, ${codes}<>""), r, SEQUENCE(ROWS(o)), `
+      + `srt, LAMBDA(a, SORTBY(a, IF(ISNUMBER(o), o, 1E+15), 1, r, 1)), `
+      + `c, ${only(codes)}, n, ${only(names)}, s, ${only(shorts)}, `
       + `h, MAP(c, n, s, LAMBDA(x, y, z, ${toDuration_(unit, sums)})), `
       + `pairs, TOROW(FILTER(HSTACK(c&"${sep}"&IF(s="", n, s), h), h>0)), `
       + `TAKE(WRAPROWS(pairs, ${slots * 2}, ""), ${C.AGG_ROWS})), "")`;
   };
 
-  /** 条件付き書式（入力漏れ・日合計の超過・今日の行）。 */
+  /** 条件付き書式（入力漏れ・同じ案件の重複・日合計の超過・今日の行）。 */
   const setConditionalRules_ = (sheet, first, days, slots) => {
     const rules = [];
     // 案件と工数は2つ揃って1件。片方だけ入っていたら両方を赤くする
@@ -266,6 +276,16 @@ const MonthSheet = (function () {
         .whenFormulaSatisfied(`=XOR($${code}${first}<>"", $${hours}${first}<>"")`)
         .setBackground(Style.COLOR.ERROR_BG)
         .setRanges([sheet.getRange(first, Layout.slotCodeCol(i), days, 2)])
+        .build());
+    }
+    // 同じ日に同じ案件を2枠以上に入れていたら案件の欄を注意の色にする（報告では合算されるので、重複入力に気づけるように）
+    const codeCells = slotIndexes_(slots).map((i) => `$${a1(Layout.slotCodeCol(i))}${first}`);
+    for (let i = 0; i < slots; i++) {
+      const self = codeCells[i];
+      rules.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied(`=AND(${self}<>"", ${codeCells.map((c) => `(${c}=${self})`).join('+')}>1)`)
+        .setBackground(Style.COLOR.WARN_BG).setFontColor(Style.COLOR.WARN_FG).setBold(true)
+        .setRanges([sheet.getRange(first, Layout.slotCodeCol(i), days, 1)])
         .build());
     }
     // 1日は24時間（時:分の値で1）までなので、超えていたら入力ミス

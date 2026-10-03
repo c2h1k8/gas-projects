@@ -18,25 +18,15 @@ const SettingsSheet = (function () {
   /** 前月分も反映する日数の上限（月の日数を超えないように） */
   const PREV_DAYS_MAX = 28;
 
-  /** 1回の実行で、既存の設定シートの項目の追加を確かめるのは1度だけにする */
-  let upgraded_ = false;
-
-  /** 設定シートを取得します（無ければ末尾に作る。古い設定シートには後から足した項目を差し込む）。 */
-  const ensure = (ss) => {
-    const sheet = ss.getSheetByName(Layout.SETTINGS_SHEET);
-    if (!sheet) return create_(ss);
-    if (!upgraded_) {
-      upgrade_(sheet);
-      upgraded_ = true;
-    }
-    return sheet;
-  };
+  /** 設定シートを取得します（無ければ末尾に作る）。 */
+  const ensure = (ss) => ss.getSheetByName(Layout.SETTINGS_SHEET) || create_(ss);
 
   const create_ = (ss) => {
     const sheet = ss.insertSheet(Layout.SETTINGS_SHEET, ss.getSheets().length);
     Style.fitSize(sheet, LAST_ROW, COLS);
     Style.base(sheet, Style.COLOR.TAB_SETTING);
     Style.title(sheet, '設定');
+    Style.sheetLink(sheet.getRange(1, COLS), ss.getSheetByName(Layout.SUMMARY_SHEET), '← サマリ');
     sheet.getRange(1, S.VALUE_COL, LAST_ROW, 1).setHorizontalAlignment('center').setFontWeight('bold');
     S.SECTIONS.forEach((sec) => {
       sheet.getRange(sec.row, 1, 1, COLS).setValues([[sec.title, '値', '説明']])
@@ -48,19 +38,6 @@ const SettingsSheet = (function () {
     sheet.setColumnWidth(2, 140);
     sheet.setColumnWidth(3, 560);
     return sheet;
-  };
-
-  /**
-   * 後から足した項目の行を、古い設定シートへ差し込みます（入力済みの値はそのまま）。
-   * 案件枠の数は「入力」の末尾に足したので、その行が別の項目なら行を挿入して下を1行ずらす
-   * （所定労働時間の行は動かないので、月シートの見込みの数式はそのまま使える）。
-   * それ以外の新しい項目は末尾の空いた行に書く。
-   */
-  const upgrade_ = (sheet) => {
-    const label = (row) => String(sheet.getRange(row, 1).getValue());
-    if (label(S.SLOTS.row) !== S.SLOTS.label) sheet.insertRowBefore(S.SLOTS.row);
-    if (sheet.getMaxRows() < LAST_ROW) sheet.insertRowsAfter(sheet.getMaxRows(), LAST_ROW - sheet.getMaxRows());
-    ITEMS.filter((item) => label(item.row) === '').forEach((item) => writeItem_(sheet, item));
   };
 
   /** 1項目の行（項目名・既定値・説明）を書き、入力規則と書式を付けます。 */
