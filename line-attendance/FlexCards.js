@@ -226,7 +226,7 @@ const FlexCards = (() => {
     },
 
     /**
-     * 稼働サマリーカード（週次/前月確定）。
+     * 稼働サマリーカード（今週の状況/着地見込み）。
      * @param {{title, subtitle, metrics, note}} p
      *   metrics: [{ label, value, accent }]（accent=trueでアクセント色）
      *   subtitle / note は省略可。

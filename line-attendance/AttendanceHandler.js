@@ -920,7 +920,7 @@ const MainProc = (function () {
     LineManager.replyFlex(replyToken, '過去12ヶ月の推移', FlexCards.history({ title: '過去12ヶ月の推移', rows, footer }));
   }
 
-  // ===== 稼働サマリー通知（週次 / 前月確定） =====
+  // ===== 今週の状況 =====
 
   /**
    * 指定日が属する週の月曜0時を返します。
@@ -947,11 +947,11 @@ const MainProc = (function () {
   };
 
   /**
-   * 指定週（月〜金）の週次サマリー表示内容を組み立てます。
+   * 指定週（月〜金）の稼働サマリー表示内容を組み立てます。
    * @param anchorDate 対象週に含まれる任意の日
    * @param throughDate 集計の打ち切り日（週の途中で参照する場合に指定）。
    *   未来日は勤務表に既定値が入っており稼働として数えてしまうため、当日までに絞る。
-   * @return { subtitle, metrics, note, signature } / 勤務表が無ければnull
+   * @return { subtitle, metrics, note } / 勤務表が無ければnull
    */
   const buildWeeklySummary_ = (anchorDate, throughDate = null) => {
     const from = startOfWeekMon(anchorDate);
@@ -981,40 +981,8 @@ const MainProc = (function () {
     if (month.overtime) noteParts.push(`残業 ${month.overtime}`);
     const note = noteParts.join(' ／ ');
     const subtitle = `${DateUtils.formatDate(from, 'M/d')}〜${DateUtils.formatDate(last, 'M/d')}`;
-    // 再送要否の判定に使う表示内容のシグネチャ（内容が変われば再送）
-    const signature = `${subtitle}|${JSON.stringify(metrics)}|${note}`;
-    return { subtitle, metrics, note, signature };
+    return { subtitle, metrics, note };
   };
-
-  /**
-   * 週次サマリーをLINEへプッシュします。
-   * @param data buildWeeklySummary_の戻り値
-   */
-  const pushWeeklySummary_ = (data) => {
-    const title = '週次サマリー';
-    notifyFlex(
-      title,
-      FlexCards.summary({ title, subtitle: data.subtitle, metrics: data.metrics, note: data.note }),
-      `${data.subtitle} / ${JSON.stringify(data.metrics)} / ${data.note}`
-    );
-  };
-
-  /**
-   * 指定日が属する週の稼働・残業・当月累計をLINEへプッシュします。
-   * @param anchorDate 対象週に含まれる任意の日
-   * @return 送信したらtrue（勤務表が無ければ送信せずfalse）
-   */
-  const sendWeeklySummary = (anchorDate) => {
-    const data = buildWeeklySummary_(anchorDate);
-    if (!data) return false;
-    pushWeeklySummary_(data);
-    return true;
-  };
-
-  /**
-   * 週次サマリーを当日基準でLINEへプッシュします（手動テスト用）。
-   */
-  const notifyWeeklySummary = () => sendWeeklySummary(new Date());
 
   /**
    * 今週の稼働・残業・当月累計を表示します（メニューからのオンデマンド）。
@@ -1035,88 +1003,6 @@ const MainProc = (function () {
       metrics: data.metrics,
       note: data.note,
     }));
-  };
-
-  // ===== 週完了時の週次サマリー自動送信 =====
-
-  const getWeeklySummarySent = () => Props.getJson(PKeys.WEEKLY_SUMMARY_SENT) || new Map();
-
-  /**
-   * 指定日1日分がLINEで登録済みかをPUNCH_LOGで判定します。
-   * 勤務表はデフォルト値で埋まっているため、実際のLINE登録有無はプロパティで判断する。
-   * 稼働/休日出勤は退勤登録済み（end）が必要、有給/欠勤/代休は区分が入っていれば登録済み。
-   * @param dateStr 対象日 'yyyy-MM-dd'
-   * @param punchLog PUNCH_LOGのMap
-   */
-  const isDayRegistered = (dateStr, punchLog) => {
-    const punch = punchLog.get(dateStr);
-    if (!punch || !punch.type) return false;
-    if (punch.type === TYPE.WORKING || punch.type === TYPE.HOLIDAY_WORKING) {
-      return !!punch.end; // 退勤登録まで済んで初めて完了
-    }
-    return true; // 休暇系は区分の登録で完了
-  };
-
-  /**
-   * 指定週（月〜金）の全営業日がLINEで登録済みかを判定します。
-   * 営業日が1日も無い週はfalse（送信対象なし扱い）。
-   * @param monday 対象週の月曜0時
-   */
-  const isWeekFullyRegistered = (monday) => {
-    const fri = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 4);
-    const punchLog = getPunchLog();
-    let hasBizDay = false;
-    for (let d = new Date(monday); d <= fri; d.setDate(d.getDate() + 1)) {
-      if (!DateUtils.isBizDate(d)) continue; // 非営業日（土日祝）は対象外
-      hasBizDay = true;
-      if (!isDayRegistered(DateUtils.formatDate(d, 'yyyy-MM-dd'), punchLog)) return false;
-    }
-    return hasBizDay;
-  };
-
-  /**
-   * 登録日が属する週（月〜金）の勤怠がすべて登録され切っていれば、
-   * 週次サマリーを自動送信します。前回送信と内容が同じ週はスキップし、
-   * 修正で内容が変わった場合のみ最新値で再送します。
-   * @param date 今回登録した日
-   */
-  const maybeNotifyWeeklyComplete = (date) => {
-    if (_testMode) return;
-    const monday = startOfWeekMon(date);
-    if (!isWeekFullyRegistered(monday)) return; // まだ埋まっていない
-    const data = buildWeeklySummary_(monday);
-    if (!data) return;
-    const weekKey = DateUtils.formatDate(monday, 'yyyy-MM-dd');
-    const sent = getWeeklySummarySent();
-    if (sent.get(weekKey) === data.signature) return; // 前回送信と内容が同じならスキップ
-    pushWeeklySummary_(data);
-    pruneOldEntries(sent);
-    sent.set(weekKey, data.signature);
-    Props.setJson(PKeys.WEEKLY_SUMMARY_SENT, sent);
-  };
-
-  /**
-   * 前月確定サマリーをLINEへプッシュします（月初想定）。
-   * 確定した前月の総稼働・残業を通知し、月別キャッシュにも確定値を保存。
-   */
-  const notifyPrevMonthSummary = () => {
-    const now = new Date();
-    const prevLast = new Date(now.getFullYear(), now.getMonth(), 0); // 前月末日
-    const totals = computeMonthTotals(prevLast);
-    if (!totals) return;
-    // 確定値を月別キャッシュへ保存（過去推移と整合させる）
-    if (!_testMode) {
-      const cache = getMonthCache();
-      cache[DateUtils.formatDate(prevLast, 'yyyyMM')] = totals;
-      setMonthCache(cache);
-    }
-    const metrics = [
-      { label: '総稼働', value: convertMinutes2Hour(totals.total) },
-      { label: '残業', value: convertMinutes2Hour(totals.overtime), accent: true },
-    ];
-    const title = '前月確定サマリー';
-    const subtitle = `${DateUtils.formatDate(prevLast, 'yyyy年M月')}分`;
-    notifyFlex(title, FlexCards.summary({ title, subtitle, metrics }), `${subtitle} / ${JSON.stringify(metrics)}`);
   };
 
   /**
@@ -1486,8 +1372,6 @@ const MainProc = (function () {
       LineManager.replyFlex(replyToken, punchCard.altText, punchCard.contents);
     }
 
-    // その週（月〜金）の勤怠がすべて登録され切ったら、週次サマリーを自動送信（週1回）
-    maybeNotifyWeeklyComplete(date);
     return { kosu, punchCard };
   }
 
@@ -2279,14 +2163,6 @@ const MainProc = (function () {
       const ledger = loadPaidLeaveLedger_(date);
       return ledger ? paidLeaveRemain_(ledger, ymdKey_(date)) : null;
     },
-    /**
-     * 週次サマリーを当日基準で通知します（手動テスト用。自動送信は登録完了時に発火）。
-     */
-    notifyWeeklySummary: () => notifyWeeklySummary(),
-    /**
-     * 前月確定サマリーを通知します（時間主導トリガーから実行）。
-     */
-    notifyPrevMonthSummary: () => notifyPrevMonthSummary(),
     /**
      * 指定期間の登録済み勤怠をまとめて書き出します（後追い・書き出し直しで使用）。
      * 勤務表の読み取りとDriveへの書き込みをそれぞれ1回に抑える。
