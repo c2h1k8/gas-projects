@@ -11,8 +11,6 @@
 const MONTHLY_TRIGGER_FUNC = 'createCurrentMonthSheet';
 /** 毎日のトリガーから呼ぶ関数名 */
 const DAILY_TRIGGER_FUNC = 'reflectReports';
-/** 以前あった編集時のトリガーの関数名（設定済みのトリガーを「トリガーを設定」「トリガーを解除」で消すために残す） */
-const LEGACY_EDIT_TRIGGER_FUNC = 'onMasterEdit';
 const APP_TITLE = '工数管理';
 
 /**
@@ -21,10 +19,19 @@ const APP_TITLE = '工数管理';
  * 今日の行の色付けは月シートの条件付き書式（TODAY()）なので、ここでは何もしない。
  */
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu(APP_TITLE)
+  const ui = SpreadsheetApp.getUi();
+  // シートが増えてもすぐ開けるよう、よく使うシートへの移動をまとめる
+  const jump = ui.createMenu('シートへ移動')
+    .addItem('サマリ', 'menuGoSummary')
+    .addItem('当月シート', 'menuGoCurrentMonth')
+    .addItem('案件マスタ', 'menuGoMaster')
+    .addItem('設定', 'menuGoSettings');
+  ui.createMenu(APP_TITLE)
+    .addSubMenu(jump)
+    .addSeparator()
     .addItem('当月シートを作成', 'menuCreateCurrentMonth')
     .addItem('翌月シートを作成', 'menuCreateNextMonth')
+    .addItem('年月を指定してシートを作成', 'menuCreateSpecifiedMonth')
     .addItem('当月シートを作り直す', 'menuRecreateCurrentMonth')
     .addItem('サマリを更新', 'menuRebuildSummary')
     .addSeparator()
@@ -91,12 +98,119 @@ function toast_(message, seconds = 5) {
 
 // ===== メニュー（時間のかかる処理は進捗ダイアログで手順を1つずつ実行する。手順の定義は StepActions.js） =====
 
+/**
+ * このツールが作るシート（サマリ・月シート・バックアップ・案件マスタ・設定）をすべて消して、初期設定からやり直します。
+ * 入力済みの工数・案件マスタ・設定はすべて消えるので、メニューには出さず GAS エディタから実行する（レイアウトを変えたときの作り直し用）。
+ * 自分で足した他のシートとトリガーはそのまま。報告シートへ前回書いた行数の記録も残す（報告ファイルに古い行を残さないため）。
+ */
+function resetAllSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const backup = /_バックアップ_\d{8}-\d{4}$/;
+  const leftover = /^作り直し中_\d+$/; // 前回途中で止まったときの仮のシート
+  const own = (s) => [Layout.SUMMARY_SHEET, Layout.MASTER_SHEET, Layout.SETTINGS_SHEET].includes(s.getName())
+    || Layout.MONTH_SHEET_PATTERN.test(s.getName()) || backup.test(s.getName()) || leftover.test(s.getName());
+  const started = Date.now();
+  const log = (msg) => console.log(`[${((Date.now() - started) / 1000).toFixed(1)}秒] ${msg}`);
+  withLock_(() => {
+    // シートを全部は消せないので、作り直すまでの仮のシートを置いておく（失敗しても最後に消す）
+    const temp = ss.insertSheet(`作り直し中_${started}`);
+    try {
+      const targets = ss.getSheets().filter((s) => own(s) && s.getSheetId() !== temp.getSheetId());
+      log(`${targets.length}枚のシートを削除します`);
+      targets.forEach((s) => ss.deleteSheet(s));
+      log('サマリを作成');
+      SummarySheet.ensure(ss);
+      log('案件マスタを作成');
+      MasterSheet.ensure(ss);
+      log('設定を作成');
+      SettingsSheet.ensure(ss);
+      log('当月シートを作成');
+      MonthSheet.ensure(ss, new Date());
+      log('サマリを更新');
+      SummarySheet.rebuild(ss);
+    } finally {
+      ss.deleteSheet(temp);
+    }
+  });
+  log('すべてのシートを作り直しました');
+}
+
+// ===== シートへ移動 =====
+
+function menuGoSummary() {
+  goToSheet_(Layout.SUMMARY_SHEET);
+}
+
+/** 当月シートを開いて今日の行を選びます（無ければ作り方を案内する）。 */
+function menuGoCurrentMonth() {
+  const sheet = goToSheet_(MonthSheet.nameOf(new Date()), '当月シートがまだありません。メニューの「当月シートを作成」から作れます。');
+  if (sheet) MonthSheet.focusToday(sheet);
+}
+
+function menuGoMaster() {
+  goToSheet_(Layout.MASTER_SHEET);
+}
+
+function menuGoSettings() {
+  goToSheet_(Layout.SETTINGS_SHEET);
+}
+
+/** シートを開きます。無ければトーストで知らせて null を返します。 */
+function goToSheet_(name, missing = `「${name}」シートがありません。メニューの「初期設定（シート作成）」から作れます。`) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sheet) {
+    toast_(missing);
+    return null;
+  }
+  sheet.activate();
+  return sheet;
+}
+
 function menuCreateCurrentMonth() {
   StepDialog.open('createMonth', { offset: 0 });
 }
 
 function menuCreateNextMonth() {
   StepDialog.open('createMonth', { offset: 1 });
+}
+
+/** 年月を指定して一度に作れる月の数（1回の操作で作りすぎないように） */
+const SPECIFIED_MONTHS_MAX = 36;
+
+/**
+ * 年月を入力して、その月のシートを作ります（過去の月の工数を後から手で入れるときなど）。
+ * 「2025-04」で1ヶ月、「2025-04〜2025-09」で期間をまとめて作る。年月は 2025/4・202504・2025年4月 の形でもよい。
+ */
+function menuCreateSpecifiedMonth() {
+  const ui = SpreadsheetApp.getUi();
+  const res = ui.prompt('年月を指定してシートを作成',
+    '作成する年月を入力してください。\n1ヶ月なら「2025-04」、期間なら「2025-04〜2025-09」', ui.ButtonSet.OK_CANCEL);
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+  const months = parseMonthRange_(res.getResponseText());
+  if (typeof months === 'string') {
+    ui.alert(months);
+    return;
+  }
+  StepDialog.open('createMonths', { months });
+}
+
+/**
+ * 「2025-04」または「2025-04〜2025-09」を、古い順の月シート名の配列にします。
+ * 不正な入力ならエラーの文言（文字列）を返します。
+ */
+function parseMonthRange_(text) {
+  const toMonth = (t) => {
+    const m = String(t).trim().match(/^(\d{4})[-/年]?(\d{1,2})月?$/);
+    return m && Number(m[2]) >= 1 && Number(m[2]) <= 12 ? { y: Number(m[1]), m: Number(m[2]) } : null;
+  };
+  const parts = String(text).trim().split(/\s*(?:[〜~～]|から)\s*/);
+  const from = toMonth(parts[0]);
+  const to = parts.length === 2 ? toMonth(parts[1]) : (parts.length === 1 ? from : null);
+  if (!from || !to) return '年月は「2025-04」、期間は「2025-04〜2025-09」のように入力してください。';
+  const count = (to.y - from.y) * 12 + (to.m - from.m) + 1;
+  if (count < 1) return '期間は古い月〜新しい月の順に入力してください。';
+  if (count > SPECIFIED_MONTHS_MAX) return `一度に作れるのは ${SPECIFIED_MONTHS_MAX} ヶ月までです。期間を分けて実行してください。`;
+  return [...Array(count).keys()].map((i) => MonthSheet.nameOf(new Date(from.y, from.m - 1 + i, 1)));
 }
 
 /** 当月シートを作り直します。バックアップを残すかはダイアログの中で選ぶ。 */
@@ -152,7 +266,7 @@ function menuRemoveTrigger() {
 
 /** このプロジェクトのトリガーをすべて削除し、削除した数を返します。 */
 function removeTriggers_() {
-  const funcs = [MONTHLY_TRIGGER_FUNC, DAILY_TRIGGER_FUNC, LEGACY_EDIT_TRIGGER_FUNC];
+  const funcs = [MONTHLY_TRIGGER_FUNC, DAILY_TRIGGER_FUNC];
   const targets = ScriptApp.getProjectTriggers().filter((t) => funcs.includes(t.getHandlerFunction()));
   targets.forEach((t) => ScriptApp.deleteTrigger(t));
   return targets.length;

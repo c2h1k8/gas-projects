@@ -124,6 +124,10 @@ const SummarySheet = (function () {
     Style.fitSize(sheet, Math.max(totalRow, first), width);
     Style.base(sheet, Style.COLOR.TAB_SUMMARY);
     Style.title(sheet, '工数サマリ'); // 年月の列を固定しているので結合せず、列幅で収める
+    // タイトルの右に、案件マスタ・設定へのリンクを置く（シートが増えてもすぐ開けるように）
+    [[S.REPORT_LINK, Layout.MASTER_SHEET], [S.REPORTED_AT, Layout.SETTINGS_SHEET]].forEach(([col, name]) => {
+      Style.sheetLink(sheet.getRange(S.TITLE_ROW, col), ss.getSheetByName(name), `${name} →`);
+    });
     sheet.getRange(2, 1).setValue('「報告シート」列に月ごとの報告ファイルのリンクを貼ると、毎晩その月の工数を書き込みます。')
       .setFontColor(Style.COLOR.MUTED).setFontSize(9);
 
@@ -220,9 +224,13 @@ const SummarySheet = (function () {
     if (protection) protection.setUnprotectedRanges([...monthRows.values()].map((r) => sheet.getRange(r, S.REPORT_LINK)));
   };
 
-  /** 前回作った行のグループ（年ごとの折りたたみ）をすべて外します。 */
+  /**
+   * 前回作った行のグループ（年ごとの折りたたみ）をすべて外します。
+   * グループは月の行（中身のある行）にしか作らないので、最終行まで見れば足りる
+   * （作ったばかりのサマリは 1000 行あり、全行を1行ずつ調べると数分かかるため）。
+   */
   const removeRowGroups_ = (sheet) => {
-    for (let r = 1; r <= sheet.getMaxRows(); r++) {
+    for (let r = 1; r <= sheet.getLastRow(); r++) {
       for (let d = sheet.getRowGroupDepth(r); d > 0; d--) {
         const group = sheet.getRowGroup(r, d);
         if (group) group.remove();

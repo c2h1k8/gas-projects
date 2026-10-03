@@ -30,6 +30,8 @@ const Style = (function () {
     TODAY_MARK_BG: '#4f46e5', // 今日の日付・曜日（白抜き）
     TODAY_MARK_FG: '#ffffff',
     ERROR_BG: '#fecaca',     // 案件と工数の片方だけ、日合計が24時間超
+    WARN_BG: '#ffedd5',      // 同じ日に同じ案件を2枠以上（合算されるので入力ミスとは限らない）
+    WARN_FG: '#c2410c',
     TAB_SUMMARY: '#4f46e5',
     TAB_MONTH: '#a5b4fc',
     TAB_SETTING: '#9ca3af',
@@ -67,6 +69,18 @@ const Style = (function () {
     range.setBorder(null, null, true, null, null, true, COLOR.LINE, SpreadsheetApp.BorderStyle.SOLID);
   };
 
+  /** 別のシートへ飛ぶリンクをセルに置きます（シートが増えてもすぐ開けるように）。シートが無ければ何もしない */
+  const sheetLink = (cell, target, text) => {
+    if (!target) return;
+    cell.setFormula(`=HYPERLINK("#gid=${target.getSheetId()}", "${text}")`)
+      .setFontSize(9).setFontColor(COLOR.ACCENT).setHorizontalAlignment('center');
+  };
+
+  /** 範囲の右側に縦線を引きます（他の辺の線はそのまま）。 */
+  const rightLine = (range) => {
+    range.setBorder(null, null, null, true, null, null, COLOR.LINE, SpreadsheetApp.BorderStyle.SOLID);
+  };
+
   /** シートの行数・列数を合わせます（使わない行・列は消す）。 */
   const fitSize = (sheet, rows, cols) => {
     const maxRows = sheet.getMaxRows();
@@ -77,5 +91,5 @@ const Style = (function () {
     else if (maxCols < cols) sheet.insertColumnsAfter(maxCols, cols - maxCols);
   };
 
-  return { FONT, COLOR, base, title, header, rowLines, fitSize };
+  return { FONT, COLOR, base, title, header, rowLines, rightLine, sheetLink, fitSize };
 })();
