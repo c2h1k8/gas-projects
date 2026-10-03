@@ -112,7 +112,7 @@ const MonthSheet = (function () {
     sheet.addDeveloperMetadata(Layout.META.PICK, pick);
 
     // タイトル（右に作成時の設定を小さく添える）
-    Style.title(sheet, Utilities.formatDate(firstDate, Session.getScriptTimeZone(), 'yyyy年M月'));
+    Style.title(sheet, Utilities.formatDate(firstDate, Session.getScriptTimeZone(), 'yyyy年M月'), C.DAY_TOTAL);
     sheet.getRange(C.TITLE_ROW, C.FIRST_SLOT).setValue(`入力単位：${unit}　／　案件の選び方：${pick}　／　${stepMin}分刻み`)
       .setFontColor(Style.COLOR.MUTED).setFontSize(9);
 
@@ -338,25 +338,16 @@ const MonthSheet = (function () {
   };
 
   /**
-   * 条件付き書式を今の定義で張り直します（作成済みのシートにも、色の変更を作り直さずに反映するため）。
-   */
-  const refreshRules = (sheet) => {
-    const { first, days } = dayRows_(sheet.getName());
-    setConditionalRules_(sheet, first, days);
-  };
-
-  /**
    * 今日の行の案件1のセルを選択します（開いてすぐ入力できるように）。
-   * 今日がその月でなければ何もしない。
+   * 当月シート以外（サマリや過去の月など）なら何もしない。
    */
   const focusToday = (sheet) => {
     const today = new Date();
     if (sheet.getName() !== nameOf(today)) return;
-    sheet.activate();
     sheet.getRange(C.FIRST_DAY_ROW + today.getDate() - 1, C.FIRST_SLOT).activate();
   };
 
   return {
-    nameOf, list, ensure, refreshRules, focusToday, settingsOf, totalRef, forecastRef, workDaysRef, projectTotalFormula, readEntries,
+    nameOf, dateOf: firstDateOf_, list, ensure, focusToday, settingsOf, totalRef, forecastRef, workDaysRef, projectTotalFormula, readEntries,
   };
 })();

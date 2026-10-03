@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- 手順を1つずつ実行する進捗ダイアログ。処理側は StepDialog.js（使い方もそちらに書いてある） -->
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --soft: #f9fafb;
+      --accent: #4f46e5;
+      --accent-soft: #eef2ff;
+      --ok: #059669;
+      --ok-soft: #ecfdf5;
+      --ng: #dc2626;
+      --ng-soft: #fef2f2;
+      --skip: #9ca3af;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: 'Noto Sans JP', system-ui, sans-serif;
+      color: var(--ink);
+      background: #ffffff;
+      font-size: 13px;
+    }
+    .wrap { display: flex; flex-direction: column; height: 100%; padding: 20px 22px 16px; gap: 14px; }
+
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    h1 { font-size: 17px; font-weight: 700; margin: 0; }
+    .elapsed { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+
+    .bar { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+    .bar > span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .35s ease; }
+    .bar.isError > span { background: var(--ng); }
+    .bar.isDone > span { background: var(--ok); }
+    .count { color: var(--muted); font-size: 11px; margin-top: -8px; text-align: right; font-variant-numeric: tabular-nums; }
+
+    .steps { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0; }
+    .step { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: start; padding: 9px 2px; border-bottom: 1px solid var(--line); }
+    .step:last-child { border-bottom: none; }
+    .icon { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); margin-top: 1px; position: relative; }
+    .step.running .icon { border-color: var(--accent-soft); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+    .step.done .icon { border-color: var(--ok); background: var(--ok); }
+    .step.done .icon::after { content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+    .step.error .icon { border-color: var(--ng); background: var(--ng); }
+    .step.error .icon::before, .step.error .icon::after { content: ''; position: absolute; left: 6px; top: 2px; width: 2px; height: 10px; background: #fff; }
+    .step.error .icon::before { transform: rotate(45deg); }
+    .step.error .icon::after { transform: rotate(-45deg); }
+    .step.skipped .icon { border-color: var(--skip); background: repeating-linear-gradient(-45deg, #fff, #fff 2px, #e5e7eb 2px, #e5e7eb 4px); }
+    .label { line-height: 1.5; }
+    .step.pending .label { color: var(--muted); }
+    .step.running .label { font-weight: 700; }
+    .step.skipped .label { color: var(--muted); }
+    .detail { color: var(--muted); font-size: 11px; margin-top: 2px; word-break: break-all; }
+    .step.error .detail { color: var(--ng); }
+    .time { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; padding-top: 2px; }
+
+    .panel { border-radius: 10px; padding: 12px 14px; line-height: 1.6; }
+    .panel.confirm { background: var(--accent-soft); }
+    .panel.ok { background: var(--ok-soft); color: #065f46; font-weight: 500; }
+    .panel.ng { background: var(--ng-soft); color: #991b1b; font-weight: 500; word-break: break-all; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { text-align: left; color: var(--muted); font-weight: 500; font-size: 11px; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+    td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    td.ok { color: var(--ok); font-weight: 700; white-space: nowrap; }
+    td.ng { color: var(--ng); font-weight: 700; white-space: nowrap; }
+    td.skip { color: var(--skip); white-space: nowrap; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    footer { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+    button {
+      font: inherit; font-weight: 500; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+      border: 1px solid var(--line); background: #fff; color: var(--ink);
+    }
+    button:hover { background: var(--soft); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover { background: #4338ca; }
+    button.danger { color: var(--ng); border-color: #fecaca; }
+    button.danger:hover { background: var(--ng-soft); }
+    [hidden] { display: none !important; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1 id="title">準備中…</h1>
+      <span class="elapsed" id="elapsed">00:00</span>
+    </header>
+    <div class="bar" id="bar"><span></span></div>
+    <div class="count" id="count"></div>
+    <ul class="steps" id="steps"></ul>
+    <div id="panel" hidden></div>
+    <footer id="footer"></footer>
+  </div>
+
+  <script>
+    (function () {
+      const BOOT = <?!= boot ?>;
+      const $ = (id) => document.getElementById(id);
+      const el = (tag, cls, text) => {
+        const e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text != null) e.textContent = text;
+        return e;
+      };
+      const fmt = (ms) => {
+        const s = Math.floor(ms / 1000);
+        return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+      };
+      const secs = (ms) => `${(ms / 1000).toFixed(1)}秒`;
+
+      // 全体の経過時間
+      const startedAt = Date.now();
+      const clock = setInterval(() => { $('elapsed').textContent = fmt(Date.now() - startedAt); }, 250);
+
+      let plan = null;
+      let args = {};
+      let ctx = {};
+      let steps = [];   // { id, label, status, detail, ms, node }
+      let autoCloseTimer = null;
+
+      const close = () => google.script.host.close();
+      const call = (fn, ...params) => new Promise((resolve, reject) => {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...params);
+      });
+
+      const renderSteps = () => {
+        const list = $('steps');
+        list.innerHTML = '';
+        steps.forEach((s) => {
+          const li = el('li', `step ${s.status}`);
+          li.appendChild(el('span', 'icon'));
+          const body = el('div');
+          body.appendChild(el('div', 'label', s.label));
+          const detail = el('div', 'detail', s.detail || '');
+          if (!s.detail) detail.hidden = true;
+          body.appendChild(detail);
+          li.appendChild(body);
+          li.appendChild(el('span', 'time', s.ms != null ? secs(s.ms) : ''));
+          s.node = li;
+          list.appendChild(li);
+        });
+        updateBar();
+      };
+
+      const updateStep = (s) => {
+        s.node.className = `step ${s.status}`;
+        const detail = s.node.querySelector('.detail');
+        detail.textContent = s.detail || '';
+        detail.hidden = !s.detail;
+        s.node.querySelector('.time').textContent = s.ms != null ? secs(s.ms) : '';
+        if (s.status === 'running') s.node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        updateBar();
+      };
+
+      const updateBar = () => {
+        const finished = steps.filter((s) => ['done', 'skipped', 'error'].includes(s.status)).length;
+        const total = steps.length || 1;
+        $('bar').firstElementChild.style.width = `${Math.round((finished / total) * 100)}%`;
+        $('count').textContent = steps.length ? `${finished} / ${steps.length}` : '';
+      };
+
+      const setFooter = (buttons) => {
+        const f = $('footer');
+        f.innerHTML = '';
+        buttons.forEach(({ label, cls, onClick }) => {
+          const b = el('button', cls || '', label);
+          b.addEventListener('click', onClick);
+          f.appendChild(b);
+        });
+      };
+
+      const showPanel = (cls, content) => {
+        const p = $('panel');
+        p.className = `panel ${cls}`;
+        p.innerHTML = '';
+        if (typeof content === 'string') p.textContent = content;
+        else p.appendChild(content);
+        p.hidden = false;
+      };
+
+      // ===== 確認 =====
+      const askConfirm = () => {
+        showPanel('confirm', plan.confirm.message);
+        setFooter([
+          { label: 'やめる', onClick: close },
+          ...plan.confirm.choices.slice().reverse().map((c) => ({
+            label: c.label,
+            cls: c.primary ? 'primary' : (c.danger ? 'danger' : ''),
+            onClick: () => {
+              args = Object.assign({}, plan.args, c.args);
+              steps = c.steps.map((s) => ({ ...s, status: 'pending' }));
+              $('panel').hidden = true;
+              renderSteps();
+              runAll();
+            },
+          })),
+        ]);
+      };
+
+      // ===== 実行 =====
+      const runAll = async () => {
+        setFooter([]);
+        let stopped = false;
+        // 手順の結果で後ろに手順が足されることがあるので、長さは毎回見直す
+        for (let i = 0; i < steps.length; i++) {
+          const s = steps[i];
+          if (stopped) { s.status = 'skipped'; s.detail = '前の手順が失敗したため未実行'; updateStep(s); continue; }
+          s.status = 'running';
+          updateStep(s);
+          const t0 = Date.now();
+          try {
+            const res = await call('stepDialogStep', BOOT.action, s.id, args, ctx);
+            ctx = res.ctx || ctx;
+            s.status = res.status;
+            s.detail = res.detail;
+            if (res.insert && res.insert.length) {
+              steps.splice(i + 1, 0, ...res.insert.map((x) => ({ ...x, status: 'pending' })));
+              renderSteps();
+            }
+          } catch (e) {
+            s.status = 'error';
+            s.detail = (e && e.message) || String(e);
+          }
+          s.ms = Date.now() - t0;
+          updateStep(s);
+          if (s.status === 'error' && !plan.continueOnError) stopped = true;
+        }
+        if (stopped) return finishWithError(steps.find((s) => s.status === 'error').detail);
+        try {
+          showResult(await call('stepDialogFinish', BOOT.action, args, ctx));
+        } catch (e) {
+          finishWithError((e && e.message) || String(e));
+        }
+      };
+
+      const finishWithError = (message) => {
+        clearInterval(clock);
+        $('bar').classList.add('isError');
+        showPanel('ng', `失敗しました: ${message}`);
+        setFooter([{ label: '閉じる', cls: 'primary', onClick: close }]);
+      };
+
+      // ===== 結果 =====
+      const showResult = (result) => {
+        clearInterval(clock);
+        const hasError = steps.some((s) => s.status === 'error');
+        $('bar').classList.add(hasError ? 'isError' : 'isDone');
+
+        if (result.results && result.results.length) {
+          const box = el('div');
+          box.appendChild(el('div', '', result.message));
+          const table = el('table');
+          const head = el('tr');
+          ['月', '結果', '内容'].forEach((h) => head.appendChild(el('th', '', h)));
+          table.appendChild(head);
+          result.results.forEach((r) => {
+            const tr = el('tr');
+            tr.appendChild(el('td', '', r.name));
+            const mark = { done: ['ok', '成功'], error: ['ng', '失敗'], skipped: ['skip', '対象外'] }[r.status];
+            tr.appendChild(el('td', mark[0], mark[1]));
+            const td = el('td', '', r.message);
+            if (r.url) {
+              td.appendChild(document.createTextNode('　'));
+              const a = el('a', '', '報告ファイルを開く');
+              a.href = r.url;
+              a.target = '_blank';
+              a.rel = 'noopener';
+              td.appendChild(a);
+            }
+            tr.appendChild(td);
+            table.appendChild(tr);
+          });
+          box.appendChild(table);
+          showPanel(hasError ? 'ng' : 'ok', box);
+        } else {
+          showPanel(hasError ? 'ng' : 'ok', result.message);
+        }
+
+        const buttons = [];
+        if (result.open) {
+          buttons.push({
+            label: `「${result.open}」を開く`,
+            onClick: () => call('stepDialogOpenSheet', BOOT.action, result.open).then(close, close),
+          });
+        }
+        const closeBtn = { label: '閉じる', cls: 'primary', onClick: close };
+        buttons.push(closeBtn);
+        setFooter(buttons);
+
+        // 結果の表が無い成功は自動で閉じる（マウスを動かしたら止める）。
+        // 閉じるだけで、シートは切り替えない（開くのはボタンを押したときだけ）
+        if (result.autoClose && !hasError) {
+          let left = 3;
+          const btn = $('footer').lastElementChild;
+          const tick = () => {
+            btn.textContent = `閉じる（${left}）`;
+            if (left-- <= 0) return close();
+            autoCloseTimer = setTimeout(tick, 1000);
+          };
+          tick();
+          document.addEventListener('mousemove', () => {
+            clearTimeout(autoCloseTimer);
+            btn.textContent = '閉じる';
+          }, { once: true });
+        }
+      };
+
+      // ===== 開始 =====
+      call('stepDialogPlan', BOOT.action, BOOT.args)
+        .then((p) => {
+          plan = p;
+          $('title').textContent = p.title;
+          if (p.error) return finishWithError(p.error);
+          args = p.args || {};
+          steps = (p.steps || []).map((s) => ({ ...s, status: 'pending' }));
+          renderSteps();
+          if (p.confirm) return askConfirm();
+          return runAll();
+        })
+        .catch((e) => finishWithError((e && e.message) || String(e)));
+    })();
+  </script>
+</body>
+</html>

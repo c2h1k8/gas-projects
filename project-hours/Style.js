@@ -17,6 +17,10 @@ const Style = (function () {
     SECTION_BG: '#eef2ff',   // 設定の区切り見出し
     TOTAL_BG: '#eef2ff',     // 合計
     TOTAL_FG: '#3730a3',
+    YEAR_BG: '#c7d2fe',      // サマリの年の見出し行（小計）
+    YEAR_FG: '#312e81',
+    GRAND_BG: '#312e81',     // サマリの合計行
+    GRAND_FG: '#ffffff',
     AUTO_BG: '#f9fafb',      // 数式で自動生成する欄
     SAT_BG: '#eff6ff',
     SAT_FG: '#1d4ed8',
@@ -39,11 +43,16 @@ const Style = (function () {
     if (tabColor) sheet.setTabColor(tabColor);
   };
 
-  /** 1行目のタイトル（と右に並べる小さな補足）。 */
-  const title = (sheet, text, sub) => {
+  /**
+   * 1行目のタイトル。A1 から span 列を結合して置く
+   * （隣の空きセルへのはみ出しに頼ると、1列目が狭いシートで文字が切れるため）。
+   * 固定表示の列と固定していない列はまたいで結合できないので、span は固定する列の中に収めること。
+   */
+  const title = (sheet, text, span = 1) => {
     sheet.setRowHeight(1, 40);
-    sheet.getRange(1, 1).setValue(text).setFontSize(16).setFontWeight('bold').setFontColor(COLOR.INK);
-    if (sub) sheet.getRange(1, 1).setNote(sub);
+    const range = sheet.getRange(1, 1, 1, span);
+    if (span > 1) range.merge();
+    range.setValue(text).setFontSize(16).setFontWeight('bold').setFontColor(COLOR.INK).setWrap(false);
   };
 
   /** 見出し行。 */

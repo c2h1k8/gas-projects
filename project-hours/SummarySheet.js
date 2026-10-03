@@ -1,6 +1,9 @@
 /**
  * サマリシート（1行1ヶ月を新しい順に、稼働日数・月合計・見込み・報告シート・案件別の工数を並べる）。
  *
+ * 月は年ごとにまとめ、年の見出し行に小計を出して、その年の月の行を折りたためるようにしています
+ * （今年は開き、過去の年は閉じておく）。一番下は全期間の合計です。
+ *
  * 値はすべて月シートを参照する数式なので、日々の入力はそのまま反映されます。
  * 作り直しが要るのは「行（月シート）」と「列（案件）」が増減したときだけで、
  * 月シートの作成時・案件マスタの編集時・メニューの「サマリを更新」で作り直します。
@@ -96,14 +99,31 @@ const SummarySheet = (function () {
     const months = MonthSheet.list(ss);
     const width = S.FIRST_PROJECT + projects.length - 1;
     const first = S.FIRST_ROW;
-    const totalRow = first + months.length;
     const a1 = Layout.colA1;
+    const sumCols = [S.WORK_DAYS, S.TOTAL, S.FORECAST, ...projects.map((_, i) => S.FIRST_PROJECT + i)];
 
+    // 年ごとにまとめる（月は新しい順なので、年も新しい順になる）
+    const years = [];
+    months.forEach((m) => {
+      const year = m.getName().slice(0, 4);
+      if (!years.length || years[years.length - 1].year !== year) years.push({ year, months: [] });
+      years[years.length - 1].months.push(m);
+    });
+    let row = first;
+    years.forEach((y) => {
+      y.row = row;
+      y.from = row + 1;
+      y.to = row + y.months.length;
+      row = y.to + 1;
+    });
+    const totalRow = row;
+
+    removeRowGroups_(sheet);
     sheet.clear();
     sheet.clearConditionalFormatRules();
     Style.fitSize(sheet, Math.max(totalRow, first), width);
     Style.base(sheet, Style.COLOR.TAB_SUMMARY);
-    Style.title(sheet, '工数サマリ');
+    Style.title(sheet, '工数サマリ'); // 年月の列を固定しているので結合せず、列幅で収める
     sheet.getRange(2, 1).setValue('「報告シート」列に月ごとの報告ファイルのリンクを貼ると、毎晩その月の工数を書き込みます。')
       .setFontColor(Style.COLOR.MUTED).setFontSize(9);
 
@@ -117,56 +137,77 @@ const SummarySheet = (function () {
       return;
     }
 
-    const rows = months.map((m) => {
-      const name = m.getName();
-      return [
-        `=HYPERLINK("#gid=${m.getSheetId()}", "${name}")`,
-        `=${MonthSheet.workDaysRef(name)}`,
-        `=${MonthSheet.totalRef(name)}`,
-        `=${MonthSheet.forecastRef(name)}`,
-        '',
-        '',
-        ...projects.map((p) => MonthSheet.projectTotalFormula(m, p)),
-      ];
+    // 年の見出し行（小計）と月の行
+    const rows = [];
+    const monthRows = new Map(); // 月シート名 → 行番号
+    years.forEach((y) => {
+      const subtotal = new Array(width).fill('');
+      subtotal[S.YM - 1] = `${y.year}年`;
+      sumCols.forEach((c) => { subtotal[c - 1] = `=SUM(${a1(c)}${y.from}:${a1(c)}${y.to})`; });
+      rows.push(subtotal);
+      y.months.forEach((m) => {
+        const name = m.getName();
+        monthRows.set(name, first + rows.length);
+        rows.push([
+          `=HYPERLINK("#gid=${m.getSheetId()}", "${name}")`,
+          `=${MonthSheet.workDaysRef(name)}`,
+          `=${MonthSheet.totalRef(name)}`,
+          `=${MonthSheet.forecastRef(name)}`,
+          '',
+          '',
+          ...projects.map((p) => MonthSheet.projectTotalFormula(m, p)),
+        ]);
+      });
     });
-    sheet.getRange(first, 1, rows.length, width).setFormulas(rows);
-    months.forEach((m, i) => {
-      const k = kept.get(m.getName());
+    // 年のラベル（文字）と数式が混ざるので setValues で書く（「=」で始まる値は数式として入る）
+    sheet.getRange(first, 1, rows.length, width).setValues(rows);
+    monthRows.forEach((r, name) => {
+      const k = kept.get(name);
       if (!k) return;
-      const cell = sheet.getRange(first + i, S.REPORT_LINK);
+      const cell = sheet.getRange(r, S.REPORT_LINK);
       if (k.url) {
         const text = k.text || k.url;
         cell.setRichTextValue(SpreadsheetApp.newRichTextValue().setText(text).setLinkUrl(k.url).build());
       } else if (k.text) {
         cell.setValue(k.text);
       }
-      if (k.reportedAt !== '') sheet.getRange(first + i, S.REPORTED_AT).setValue(k.reportedAt);
+      if (k.reportedAt !== '') sheet.getRange(r, S.REPORTED_AT).setValue(k.reportedAt);
     });
 
-    // 合計行（報告シートの列は合計しない）
+    // 合計行（年の小計を足す。報告シートの列は合計しない）
     const totals = new Array(width).fill('');
     totals[S.YM - 1] = '合計';
-    [S.WORK_DAYS, S.TOTAL, S.FORECAST, ...projects.map((_, i) => S.FIRST_PROJECT + i)].forEach((c) => {
-      totals[c - 1] = `=SUM(${a1(c)}${first}:${a1(c)}${totalRow - 1})`;
-    });
-    sheet.getRange(totalRow, 1, 1, width).setValues([totals])
-      .setBackground(Style.COLOR.TOTAL_BG).setFontColor(Style.COLOR.TOTAL_FG).setFontWeight('bold');
+    sumCols.forEach((c) => { totals[c - 1] = `=SUM(${years.map((y) => `${a1(c)}${y.row}`).join(',')})`; });
+    sheet.getRange(totalRow, 1, 1, width).setValues([totals]);
 
     const body = (c, n = 1) => sheet.getRange(first, c, rows.length + 1, n);
     sheet.setRowHeights(first, rows.length + 1, 28);
     Style.rowLines(sheet.getRange(first, 1, rows.length + 1, width));
-    body(S.YM).setHorizontalAlignment('center').setFontWeight('bold');
+    body(S.YM).setHorizontalAlignment('center');
     body(S.WORK_DAYS).setNumberFormat('0"日"').setHorizontalAlignment('center');
     body(S.TOTAL, 2).setNumberFormat(Layout.HM_FORMAT).setHorizontalAlignment('center');
     body(S.TOTAL).setFontWeight('bold').setFontColor(Style.COLOR.ACCENT);
     body(S.FORECAST).setFontColor(Style.COLOR.MUTED);
     body(S.REPORTED_AT).setFontColor(Style.COLOR.MUTED).setFontSize(9).setWrap(true).setHorizontalAlignment('center');
     if (projects.length) body(S.FIRST_PROJECT, projects.length).setNumberFormat(Layout.HM_FORMAT).setHorizontalAlignment('center');
-    sheet.getRange(totalRow, S.TOTAL).setFontColor(Style.COLOR.TOTAL_FG);
+    // 合計行は表の締めとして濃い色にする（列ごとの文字色より後に当てて上書きする）
+    sheet.getRange(totalRow, 1, 1, width)
+      .setBackground(Style.COLOR.GRAND_BG).setFontColor(Style.COLOR.GRAND_FG).setFontWeight('bold');
+
+    // 年の見出し行は月の行（白）・合計行（濃い藍）と見分けられる帯にし、その年の月の行を折りたためるようにする（今年以外は閉じる）
+    const thisYear = String(new Date().getFullYear());
+    // 開閉ボタンをグループの前（年の見出し行）に出す
+    sheet.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE);
+    years.forEach((y) => {
+      sheet.getRange(y.row, 1, 1, width)
+        .setBackground(Style.COLOR.YEAR_BG).setFontColor(Style.COLOR.YEAR_FG).setFontWeight('bold');
+      sheet.getRange(y.from, 1, y.months.length, 1).shiftRowGroupDepth(1);
+      if (y.year !== thisYear) sheet.getRowGroup(y.from, 1).collapse();
+    });
 
     sheet.setFrozenRows(S.HEADER_ROW);
     sheet.setFrozenColumns(S.YM);
-    sheet.setColumnWidth(S.YM, 90);
+    sheet.setColumnWidth(S.YM, 120); // タイトル「工数サマリ」が収まる幅
     sheet.setColumnWidth(S.WORK_DAYS, 72);
     sheet.setColumnWidth(S.TOTAL, 84);
     sheet.setColumnWidth(S.FORECAST, 84);
@@ -176,7 +217,17 @@ const SummarySheet = (function () {
 
     // 報告シートの列だけは手入力なので、保護の対象から外す
     const protection = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET)[0];
-    if (protection) protection.setUnprotectedRanges([sheet.getRange(first, S.REPORT_LINK, rows.length, 1)]);
+    if (protection) protection.setUnprotectedRanges([...monthRows.values()].map((r) => sheet.getRange(r, S.REPORT_LINK)));
+  };
+
+  /** 前回作った行のグループ（年ごとの折りたたみ）をすべて外します。 */
+  const removeRowGroups_ = (sheet) => {
+    for (let r = 1; r <= sheet.getMaxRows(); r++) {
+      for (let d = sheet.getRowGroupDepth(r); d > 0; d--) {
+        const group = sheet.getRowGroup(r, d);
+        if (group) group.remove();
+      }
+    }
   };
 
   /**

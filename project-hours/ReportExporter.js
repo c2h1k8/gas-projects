@@ -10,7 +10,8 @@
  * 行数を覚えているのは、入力開始行より下にある報告シート側の合計行などを消さないためです。
  */
 const ReportExporter = (function () {
-  const props = PropertiesService.getDocumentProperties();
+  // 読み込み時にサービスを呼ばない（onOpen などのシンプルトリガーでも全ファイルが読み込まれるため）
+  const props = () => PropertiesService.getDocumentProperties();
   const tz = () => Session.getScriptTimeZone();
   const now = () => Utilities.formatDate(new Date(), tz(), 'yyyy/MM/dd HH:mm');
 
@@ -37,7 +38,7 @@ const ReportExporter = (function () {
     if (!target) throw new Error(`報告ファイルに「${cfg.sheetName}」シートがありません`);
 
     const key = countKey_(fileId, cfg, name);
-    const prevCount = Number(props.getProperty(key)) || 0;
+    const prevCount = Number(props().getProperty(key)) || 0;
     const rows = Math.max(prevCount, entries.length);
     const lastRow = cfg.startRow + Math.max(rows, 1) - 1;
     if (target.getMaxRows() < lastRow) target.insertRowsAfter(target.getMaxRows(), lastRow - target.getMaxRows());
@@ -56,31 +57,32 @@ const ReportExporter = (function () {
     if (cfg.unit === Layout.REPORT_UNIT.HM && entries.length) {
       target.getRange(cfg.startRow, cfg.hoursCol, entries.length, 1).setNumberFormat(Layout.HM_FORMAT);
     }
-    props.setProperty(key, String(entries.length));
+    props().setProperty(key, String(entries.length));
     return entries.length;
   };
 
   /**
    * 指定した月シートを報告シートへ反映し、結果をサマリの「最終反映」列に書きます。
    * 1ヶ月の失敗で他の月を止めないよう、月ごとに結果を返します。
-   * @return [{ name, ok, message }]
+   * @param used ファイル ID → 月。同じ報告シートに2ヶ月分を重ねて書かないための記録で、
+   *   進捗ダイアログが1ヶ月ずつ呼ぶときは呼び出しをまたいで引き継ぐ
+   * @return [{ name, ok, skipped, count, fileId, message }]
    */
-  const run = (ss, monthSheets) => {
+  const run = (ss, monthSheets, used = new Map()) => {
     const cfg = SettingsSheet.readReport(ss);
-    const used = new Map(); // ファイル ID → 月。同じ報告シートに2ヶ月分を重ねて書かないため
     return monthSheets.map((sheet) => {
       const name = sheet.getName();
       const fileId = SummarySheet.reportFileId(ss, name);
-      if (!fileId) return { name, ok: true, message: '報告シートのリンクが無いため対象外' };
+      if (!fileId) return { name, ok: true, skipped: true, count: 0, fileId: null, message: '報告シートのリンクが無いため対象外' };
       try {
         if (used.has(fileId)) throw new Error(`${used.get(fileId)} と同じ報告ファイルです（月ごとに別のファイルを貼ってください）`);
         used.set(fileId, name);
         const count = exportMonth_(ss, sheet, fileId, cfg);
         SummarySheet.setReportStatus(ss, name, `${now()}　${count}件`);
-        return { name, ok: true, message: `${count}件を反映` };
+        return { name, ok: true, skipped: false, count, fileId, message: `${count}件を反映` };
       } catch (e) {
         SummarySheet.setReportStatus(ss, name, `${now()}　エラー: ${e.message}`);
-        return { name, ok: false, message: e.message };
+        return { name, ok: false, skipped: false, count: 0, fileId, message: e.message };
       }
     });
   };

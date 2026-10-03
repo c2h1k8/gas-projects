@@ -18,8 +18,9 @@ const EDIT_TRIGGER_FUNC = 'onMasterEdit';
 const APP_TITLE = '工数管理';
 
 /**
- * スプレッドシートを開いたときにメニューを追加し、当月シートの今日の行を選択します。
- * 今日の行の色付けもここで張り直すので、色の定義を変えても作成済みのシートに反映されます。
+ * スプレッドシートを開いたときにメニューを追加し、当月シートを開いていれば今日の行を選択します
+ * （他のシートを開いていたら切り替えない。リロードのたびに当月シートへ飛ばされないように）。
+ * 今日の行の色付けは月シートの条件付き書式（TODAY()）なので、ここでは何もしない。
  */
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -37,11 +38,11 @@ function onOpen() {
     .addItem('トリガーを解除', 'menuRemoveTrigger')
     .addToUi();
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const current = ss.getSheetByName(MonthSheet.nameOf(new Date()));
-  if (current) {
-    MonthSheet.refreshRules(current);
-    MonthSheet.focusToday(current);
+  // ここから先は失敗してもメニューの表示には影響させない（ログだけ残す）
+  try {
+    MonthSheet.focusToday(SpreadsheetApp.getActiveSpreadsheet().getActiveSheet());
+  } catch (e) {
+    console.warn(`onOpen: 今日の行の選択に失敗しました: ${e.message}`);
   }
 }
 
@@ -69,7 +70,7 @@ function reflectReports() {
 }
 
 /**
- * 指定日の月のシートを作り、サマリを作り直します。
+ * 指定日の月のシートを作り、サマリを作り直します（月次トリガー用。メニューからは進捗ダイアログ経由）。
  * @return { sheet, created }
  */
 function createMonthSheet_(date) {
@@ -99,39 +100,36 @@ function toast_(message, seconds = 5) {
   SpreadsheetApp.getActiveSpreadsheet().toast(message, APP_TITLE, seconds);
 }
 
+// ===== メニュー（時間のかかる処理は進捗ダイアログで手順を1つずつ実行する。手順の定義は StepActions.js） =====
+
 function menuCreateCurrentMonth() {
-  showMonthResult_(createMonthSheet_(new Date()));
+  StepDialog.open('createMonth', { offset: 0 });
 }
 
 function menuCreateNextMonth() {
-  const now = new Date();
-  showMonthResult_(createMonthSheet_(new Date(now.getFullYear(), now.getMonth() + 1, 1)));
+  StepDialog.open('createMonth', { offset: 1 });
 }
 
-/**
- * 当月シートを消して、今のレイアウトと設定（入力単位・案件の選び方・刻み）で作り直します。
- * 入力済みの工数も消えるので、作り直す前にバックアップ（シートのコピー）を残すかを確認します。
- */
+/** 当月シートを作り直します。バックアップを残すかはダイアログの中で選ぶ。 */
 function menuRecreateCurrentMonth() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
-  const now = new Date();
-  const name = MonthSheet.nameOf(now);
-  const existing = ss.getSheetByName(name);
-  if (existing) {
-    const answer = ui.alert('当月シートを作り直す',
-      `${name} を、今のレイアウトと設定シートの内容（入力単位・案件の選び方・刻み）で作り直します。`
-      + '入力済みの工数・備考は新しいシートには引き継がれません。\n\n'
-      + '作り直す前にバックアップ（今のシートのコピー）を残しますか？\n'
-      + '「はい」＝残して作り直す　「いいえ」＝残さずに作り直す　「キャンセル」＝やめる',
-      ui.ButtonSet.YES_NO_CANCEL);
-    if (answer === ui.Button.CANCEL || answer === ui.Button.CLOSE) return;
-    withLock_(() => {
-      if (answer === ui.Button.YES) backupSheet_(ss, existing);
-      ss.deleteSheet(existing);
-    });
-  }
-  showMonthResult_(createMonthSheet_(now));
+  StepDialog.open('recreateMonth');
+}
+
+function menuRebuildSummary() {
+  StepDialog.open('rebuildSummary');
+}
+
+function menuReflectReports() {
+  StepDialog.open('reflect', { mode: 'today' });
+}
+
+function menuReflectActiveMonth() {
+  StepDialog.open('reflect', { mode: 'active' });
+}
+
+/** サマリ・案件マスタ・設定・当月シートを作ります。既にあるシートには手を付けません。 */
+function menuSetup() {
+  StepDialog.open('setup');
 }
 
 /**
@@ -146,52 +144,6 @@ function backupSheet_(ss, sheet) {
   ss.setActiveSheet(backup);
   ss.moveActiveSheet(ss.getNumSheets());
   return backup;
-}
-
-function showMonthResult_({ sheet, created }) {
-  sheet.activate();
-  toast_(created ? `${sheet.getName()} を作成しました。` : `${sheet.getName()} は作成済みです。`);
-}
-
-function menuRebuildSummary() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  withLock_(() => SummarySheet.rebuild(ss));
-  toast_('サマリを更新しました。');
-}
-
-function menuReflectReports() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  showReflectResults_(withLock_(() => ReportExporter.run(ss, ReportExporter.targetsForToday(ss))));
-}
-
-function menuReflectActiveMonth() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getActiveSheet();
-  if (!Layout.MONTH_SHEET_PATTERN.test(sheet.getName())) {
-    SpreadsheetApp.getUi().alert('反映したい月のシートを開いてから実行してください。');
-    return;
-  }
-  showReflectResults_(withLock_(() => ReportExporter.run(ss, [sheet])));
-}
-
-function showReflectResults_(results) {
-  const message = results.length
-    ? results.map((r) => `${r.name}: ${r.ok ? '' : 'エラー '}${r.message}`).join('\n')
-    : '反映する月シートがありません。';
-  SpreadsheetApp.getUi().alert('報告シートへ反映', message, SpreadsheetApp.getUi().ButtonSet.OK);
-}
-
-/**
- * サマリ・案件マスタ・設定・当月シートを作ります。既にあるシートには手を付けません。
- * 新規スプレッドシートの空の「シート1」は不要なので消します。
- */
-function menuSetup() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const { sheet } = createMonthSheet_(new Date());
-  const blank = ss.getSheetByName('シート1') || ss.getSheetByName('Sheet1');
-  if (blank && blank.getLastRow() === 0 && blank.getLastColumn() === 0) ss.deleteSheet(blank);
-  MasterSheet.ensure(ss).activate();
-  toast_(`${sheet.getName()} まで作成しました。案件マスタに案件を登録してください。`, 10);
 }
 
 function menuSetupTrigger() {

@@ -198,22 +198,45 @@ const SummaryService = (function () {
   };
 
   /**
-   * サマリを更新します。
-   * @param full trueなら索引を作り直し、全ての勤務表を読み直す
-   * @param onProgress 進捗を知らせる関数（任意）。メニューからの実行でだけ渡す。
-   *   トリガからの実行では画面が無いので渡さない。
-   * @return { months, read, skipped, kept, noContract, scanned } 件数
+   * 手順の間で月ごとの途中結果を置く場所。
+   *   - トリガからの実行（1回で全部やる）はメモリ
+   *   - 進捗ダイアログからの実行（手順ごとに別の実行になる）はスクリプトキャッシュ
+   * キャッシュは文字列しか置けないので、日付は { $date: ミリ秒 } にして戻す。
    */
-  const refresh = (full = false, onProgress) => {
-    const report = (msg) => { if (onProgress) onProgress(msg); };
-    report('設定を読み込んでいます…');
+  const memoryStore_ = () => {
+    const map = new Map();
+    return { put: (key, value) => map.set(key, value), get: (key) => map.get(key) };
+  };
+  const cacheStore_ = (runId) => {
+    const cache = CacheService.getScriptCache();
+    const key = (k) => `summary-refresh:${runId}:${k}`;
+    const TTL = 6 * 60 * 60; // 最長の6時間
+    return {
+      put: (k, value) => cache.put(key(k), JSON.stringify(value, function (name, v) {
+        const raw = this[name];
+        return raw instanceof Date ? { $date: raw.getTime() } : v;
+      }), TTL),
+      get: (k) => {
+        const raw = cache.get(key(k));
+        return raw ? JSON.parse(raw, (name, v) => (v && typeof v === 'object' && '$date' in v ? new Date(v.$date) : v)) : null;
+      },
+    };
+  };
+
+  /** 'yyyyMM' → '2026/08' */
+  const label_ = (ym) => `${ym.slice(0, 4)}/${ym.slice(4)}`;
+
+  /**
+   * 1. 準備: 索引を確かめ（必要ならフォルダを走査し）、どの月を読み直すかを決めます。
+   * 走査で開いたファイルはその場で行にして store に置き、読み直す月から外します（同じファイルを二度開かない）。
+   * @return plan { scanned, months, toRead: [{ ym, id }], skipYms: [ym] }（JSON にできる値だけ）
+   */
+  const prepare = (full, store) => {
     const cfg = Config.load();
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = getSheet_(ss);
-
-    const existing = readExisting_(sheet);
     const byYm = {};
-    existing.forEach((r) => { byYm[r.ym] = r; });
+    readExisting_(sheet).forEach((r) => { byYm[r.ym] = r; });
 
     // フォルダの走査は、索引に無い月があるときだけ行う
     let index = FileIndex.load();
@@ -221,7 +244,6 @@ const SummaryService = (function () {
     let dataById = {};
     let scanned = false;
     if (FileIndex.needsScan(cfg, index, full)) {
-      report('勤務表フォルダを調べています…');
       const r = FileIndex.scan(cfg, ss.getId());
       index = r.index;
       metaById = r.metaById;
@@ -230,51 +252,86 @@ const SummaryService = (function () {
     }
 
     const nowYm = Timesheet.ym(new Date());
-    // 進捗を古い月から順に見せたいので並べ替える
-    const months = Object.keys(index.months).sort();
-    const result = { months: months.length, read: 0, skipped: 0, kept: 0, noContract: 0, scanned };
-    const merged = {};
-
-    months.forEach((ym, idx) => {
-      const label = `${ym.slice(0, 4)}/${ym.slice(4)}`;
-      report(`${label} を確認しています…（${idx + 1}/${months.length}）`);
+    const months = Object.keys(index.months).sort(); // 古い月から順に読む
+    const toRead = [];
+    const skipYms = [];
+    months.forEach((ym) => {
       const entry = index.months[ym];
       const prev = byYm[ym];
       // 当月・未来月は日付が進むだけで実績範囲が変わるため、更新が無くても読み直す
-      const isOpen = ym >= nowYm;
-      let needRead = full || !prev || isOpen;
+      let needRead = full || !prev || ym >= nowYm;
 
       // 走査した回だけは、過去月も最終更新日時を見て編集を拾う。
       // 走査しない回はメタデータを取りに行かないぶん、過去月の編集は次の走査まで反映されない。
-      let meta = metaById[entry.id] || null;
+      const meta = metaById[entry.id] || null;
       if (!needRead && meta) {
         const prevUpdated = prev.meta.updated instanceof Date ? prev.meta.updated.getTime() : null;
         needRead = prevUpdated === null || prevUpdated !== meta.updated.getTime();
       }
-
       if (!needRead) {
-        prev.meta.created = Timesheet.toDate(entry.created) || prev.meta.created;
+        skipYms.push(ym);
+        return;
+      }
+      // 走査で開いた月は、もう読んである
+      if (meta && dataById[entry.id]) {
+        store.put(`row:${ym}`, { status: 'read', row: buildRow_(dataById[entry.id], meta) });
+        return;
+      }
+      if (meta) store.put(`meta:${ym}`, meta);
+      toRead.push({ ym, id: entry.id });
+    });
+    return { scanned, months: months.length, toRead, skipYms };
+  };
+
+  /**
+   * 2. 1ヶ月分の勤務表を読み、行にして store に置きます。
+   * @return 'read'（読んだ）/ 'missing'（開けない・勤務表として読めない。前回の行があればそのまま残す）
+   */
+  const readOne = (item, store) => {
+    const cfg = Config.load();
+    // 走査していない回は、読む月のぶんだけメタデータを取る
+    const meta = store.get(`meta:${item.ym}`) || Timesheet.fileMeta(item.id);
+    const data = meta ? Timesheet.readMonth(item.id, cfg) : null;
+    if (!data) {
+      store.put(`row:${item.ym}`, { status: 'missing' });
+      return 'missing';
+    }
+    store.put(`row:${item.ym}`, { status: 'read', row: buildRow_(data, meta) });
+    return 'read';
+  };
+
+  /**
+   * 3. 読んだ月と読まなかった月を合わせ、契約を引き直してシートへ書きます。
+   * @return { months, read, skipped, kept, noContract, scanned } 件数
+   */
+  const commit = (plan, store) => {
+    const cfg = Config.load();
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = getSheet_(ss);
+    const existing = readExisting_(sheet);
+    const byYm = {};
+    existing.forEach((r) => { byYm[r.ym] = r; });
+    const index = FileIndex.load();
+    const skip = new Set(plan.skipYms);
+    const result = { months: plan.months, read: 0, skipped: 0, kept: 0, noContract: 0, scanned: plan.scanned };
+    const merged = {};
+
+    Object.keys(index.months).sort().forEach((ym) => {
+      const prev = byYm[ym];
+      if (skip.has(ym) && prev) {
+        prev.meta.created = Timesheet.toDate(index.months[ym].created) || prev.meta.created;
         merged[ym] = prev;
         result.skipped++;
         return;
       }
-
-      // 走査していない回は、読む月のぶんだけメタデータを取る
-      if (!meta) meta = Timesheet.fileMeta(entry.id);
-      if (!meta) {
-        // 索引にあるがもう開けないファイル。次の走査で索引から落ちる
-        if (prev) { merged[ym] = prev; result.kept++; }
+      const outcome = store.get(`row:${ym}`);
+      if (outcome && outcome.status === 'read') {
+        merged[outcome.row.ym] = outcome.row;
+        result.read++;
         return;
       }
-
-      report(`${label} の勤務表を読み込んでいます…（${idx + 1}/${months.length}）`);
-      const data = dataById[entry.id] || Timesheet.readMonth(entry.id, cfg);
-      if (!data) {
-        if (prev) { merged[ym] = prev; result.kept++; }
-        return;
-      }
-      merged[data.ym] = buildRow_(data, meta);
-      result.read++;
+      // 索引にあるがもう開けないファイル。次の走査で索引から落ちる
+      if (prev) { merged[ym] = prev; result.kept++; }
     });
 
     // 索引に無い月も、集計済みの内容が消えないよう残す
@@ -289,19 +346,32 @@ const SummaryService = (function () {
     rows.sort((a, b) => (a.ym < b.ym ? 1 : a.ym > b.ym ? -1 : 0)); // 新しい月が上
 
     // 契約は毎回引き直す（契約シートを直したら全ての月に反映させたいため）
-    report('契約を反映しています…');
     const contracts = Contracts.load();
     rows.forEach((r) => {
       r.contract = Contracts.find(contracts, r.ym);
       if (!r.contract) result.noContract++;
     });
 
-    report(`シートへ書き込んでいます…（${rows.length}ヶ月）`);
     writeRows_(sheet, rows);
     Logger.log('[SummaryService] 索引%sヶ月 / 走査%s / 読込%s / スキップ%s / 据置%s / 契約なし%s → %s行',
-      result.months, scanned ? 'あり' : 'なし', result.read, result.skipped, result.kept, result.noContract, rows.length);
+      result.months, plan.scanned ? 'あり' : 'なし', result.read, result.skipped, result.kept, result.noContract, rows.length);
     return result;
   };
 
-  return { refresh };
+  /**
+   * サマリを1回の実行で更新します（トリガ用。メニューからは進捗ダイアログが prepare → readOne → commit を手順ごとに呼ぶ）。
+   * @param full trueなら索引を作り直し、全ての勤務表を読み直す
+   * @return { months, read, skipped, kept, noContract, scanned } 件数
+   */
+  const refresh = (full = false) => {
+    const store = memoryStore_();
+    const plan = prepare(full, store);
+    plan.toRead.forEach((item) => readOne(item, store));
+    return commit(plan, store);
+  };
+
+  /** 進捗ダイアログの1回の実行ぶんの途中結果を置く場所を返します（runId は実行ごとに作る）。 */
+  const stepStore = (runId) => cacheStore_(runId);
+
+  return { refresh, prepare, readOne, commit, stepStore, label: label_ };
 })();
