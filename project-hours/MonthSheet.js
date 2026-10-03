@@ -257,12 +257,12 @@ const MonthSheet = (function () {
     // 案件は表示順の小さい順に並べる（空欄は後ろに、同じ表示順・空欄どうしはマスタの順）
     const only = (r) => `srt(FILTER(${r}, ${codes}<>""))`;
     const sums = sumExpr_('', pick, slots, { code: 'x', name: 'y', short: 'z' }, first, last);
-    return `=IFERROR(LET(o, FILTER(${orders}, ${codes}<>""), r, SEQUENCE(ROWS(o)), `
-      + `srt, LAMBDA(a, SORTBY(a, IF(ISNUMBER(o), o, 1E+15), 1, r, 1)), `
+    return `=IFERROR(ARRAYFORMULA(LET(o, FILTER(${orders}, ${codes}<>""), r, SEQUENCE(ROWS(o)), `
+      + `srt, LAMBDA(a, SORT(a, IF(ISNUMBER(o), o, 1E+15), TRUE, r, TRUE)), `
       + `c, ${only(codes)}, n, ${only(names)}, s, ${only(shorts)}, `
       + `h, MAP(c, n, s, LAMBDA(x, y, z, ${toDuration_(unit, sums)})), `
       + `pairs, TOROW(FILTER(HSTACK(c&"${sep}"&IF(s="", n, s), h), h>0)), `
-      + `TAKE(WRAPROWS(pairs, ${slots * 2}, ""), ${C.AGG_ROWS})), "")`;
+      + `TAKE(WRAPROWS(pairs, ${slots * 2}, ""), ${C.AGG_ROWS}))), "")`;
   };
 
   /** 条件付き書式（入力漏れ・同じ案件の重複・日合計の超過・今日の行）。 */
@@ -332,7 +332,7 @@ const MonthSheet = (function () {
   /**
    * 入力済みの工数を「1日×1案件」にまとめて返します（同じ日に同じ案件を2枠に入れたら合算）。
    * @param projects MasterSheet.getProjects の戻り値
-   * @return [{ date, project, minutes }]（日付順、同じ日はマスタの順）
+   * @return [{ date, project, minutes }]（日付順、同じ日は projects の順）
    */
   const readEntries = (sheet, projects) => {
     const { unit, pick, slots } = settingsOf(sheet);

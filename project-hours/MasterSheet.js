@@ -84,14 +84,7 @@ const MasterSheet = (function () {
 
     sheet.getRange(M.HEADER_ROW, M.REPORT).setNote('チェックした案件だけを報告シートへ書き込みます。');
     sheet.getRange(M.HEADER_ROW, M.LABEL).setNote('「コード：案件名」で選ぶときのプルダウンの値です。自動で作られます。');
-    // プルダウン用の一覧。選び方ごとの列（選択肢・コード・案件名・略称）の値を、空欄を除いて表示順に並べる
-    const order = a1(M.ORDER);
-    Object.entries(M.PICK_LISTS).forEach(([pick, listCol]) => {
-      const src = a1(PICK_COL[pick]);
-      const r = (c) => `${c}${first}:${c}`;
-      sheet.getRange(first, listCol).setFormula(`=IFERROR(LET(v, ${r(src)}, o, ${r(order)}, ok, (${r(code)}<>"")*(v<>""), `
-        + `SORTBY(FILTER(v, ok), FILTER(IF(ISNUMBER(o), o, 1E+15), ok), 1, FILTER(ROW(v), ok), 1)), "")`);
-    });
+    writePickLists_(sheet);
     const lists = Object.values(M.PICK_LISTS);
     sheet.getRange(M.HEADER_ROW, Math.min(...lists), rows + 1, lists.length).protect()
       .setDescription('プルダウン用の一覧は自動生成のため編集不可').setWarningOnly(true);
@@ -100,6 +93,24 @@ const MasterSheet = (function () {
     sheet.getRange(M.HEADER_ROW, M.LABEL, rows + 1, 1).protect()
       .setDescription('選択肢は自動生成のため編集不可').setWarningOnly(true);
     return sheet;
+  };
+
+  /**
+   * プルダウン用の一覧の数式を書きます。選び方ごとの列（選択肢・コード・案件名・略称）の値を、空欄を除いて表示順に並べる。
+   * Google スプレッドシートには SORTBY が無いので、並べ替えのキーに別の範囲を渡せる SORT を使う。
+   * LET の中の比較・IF は ARRAYFORMULA で包まないと先頭の1件しか計算されないので、全体を包む。
+   */
+  const writePickLists_ = (sheet) => {
+    const first = M.FIRST_ROW;
+    const a1 = (c) => Layout.colA1(c);
+    const r = (c) => `${c}${first}:${c}`;
+    const code = a1(M.CODE);
+    const order = a1(M.ORDER);
+    Object.entries(M.PICK_LISTS).forEach(([pick, listCol]) => {
+      const src = a1(PICK_COL[pick]);
+      sheet.getRange(first, listCol).setFormula(`=IFERROR(ARRAYFORMULA(LET(v, ${r(src)}, o, ${r(order)}, ok, (${r(code)}<>"")*(v<>""), `
+        + `SORT(FILTER(v, ok), FILTER(IF(ISNUMBER(o), o, 1E+15), ok), TRUE, FILTER(ROW(v), ok), TRUE))), "")`);
+    });
   };
 
   /** 案件の選び方ごとに、プルダウンの元にする列 */
