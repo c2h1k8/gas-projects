@@ -2,7 +2,7 @@
  * 報告シート（お客様が用意した別ファイル）への工数の書き込み。
  *
  * サマリの「報告シート」列に貼ったファイルの、設定シートで指定したシートへ、
- * 報告対象の案件の工数を「1日×1案件で1行」ずつ入力開始行から書きます。
+ * 報告対象の案件の工数を「1日×1案件で1行」ずつ、日付・案件コードの昇順で入力開始行から書きます。
  * 書くのは設定で指定した列（日付・案件コード・案件名・工数）だけで、他の列には触れません。
  *
  * 前回より件数が減ったときに古い行が残らないよう、前回書いた行数を覚えておき、
@@ -31,7 +31,9 @@ const ReportExporter = (function () {
    */
   const exportMonth_ = (ss, monthSheet, fileId, cfg) => {
     const name = monthSheet.getName();
-    const projects = MasterSheet.getProjects(ss).filter((p) => p.report);
+    // 同じ日の行は渡した案件の順に並ぶので、表示順ではなく案件コード順にしておく
+    const projects = MasterSheet.getProjects(ss).filter((p) => p.report)
+      .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
     const entries = MonthSheet.readEntries(monthSheet, projects);
 
     const target = SpreadsheetApp.openById(fileId).getSheetByName(cfg.sheetName);
