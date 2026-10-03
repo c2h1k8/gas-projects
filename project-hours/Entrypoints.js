@@ -1,20 +1,18 @@
 /**
  * メニュー・トリガーの入口。
  *
- * トリガーは3つです（どれも push では作られないので、初回だけメニューの「トリガーを設定」を実行する）。
+ * トリガーは2つです（どちらも push では作られないので、初回だけメニューの「トリガーを設定」を実行する）。
  *   - 毎月1日0時台: 当月シートを作る（createCurrentMonthSheet）
  *   - 毎日、設定シートの反映時刻: 報告シートへ当月分を書き込む（reflectReports。月初の数日は前月分も）
- *   - 編集時: 案件マスタを編集したらサマリを作り直す（onMasterEdit）。
- *     シンプルトリガーの onEdit では Sheets API を使えず、サマリの報告シート列のスマートチップの
- *     リンク先を読めない（作り直しで消えてしまう）ため、インストール型にしている
+ * 案件マスタを編集したときは、メニューの「サマリを更新」でサマリを作り直す。
  */
 
 /** 月次トリガーから呼ぶ関数名 */
 const MONTHLY_TRIGGER_FUNC = 'createCurrentMonthSheet';
 /** 毎日のトリガーから呼ぶ関数名 */
 const DAILY_TRIGGER_FUNC = 'reflectReports';
-/** 編集時のトリガーから呼ぶ関数名 */
-const EDIT_TRIGGER_FUNC = 'onMasterEdit';
+/** 以前あった編集時のトリガーの関数名（設定済みのトリガーを「トリガーを設定」「トリガーを解除」で消すために残す） */
+const LEGACY_EDIT_TRIGGER_FUNC = 'onMasterEdit';
 const APP_TITLE = '工数管理';
 
 /**
@@ -44,15 +42,6 @@ function onOpen() {
   } catch (e) {
     console.warn(`onOpen: 今日の行の選択に失敗しました: ${e.message}`);
   }
-}
-
-/**
- * 案件マスタを編集したらサマリの列（案件）を作り直します。
- * 月シートの入力はサマリの数式がそのまま拾うので、ここでは何もしません。
- */
-function onMasterEdit(e) {
-  if (!e || e.range.getSheet().getName() !== Layout.MASTER_SHEET) return;
-  withLock_(() => SummarySheet.rebuild(e.source));
 }
 
 /** 月次トリガー（毎月1日0時）から呼ばれます。当月シートを作ります。 */
@@ -153,8 +142,7 @@ function menuSetupTrigger() {
   // atHour は「その時台のどこか」で実行される（分は指定できない）
   ScriptApp.newTrigger(MONTHLY_TRIGGER_FUNC).timeBased().onMonthDay(1).atHour(0).create();
   ScriptApp.newTrigger(DAILY_TRIGGER_FUNC).timeBased().everyDays(1).atHour(hour).create();
-  ScriptApp.newTrigger(EDIT_TRIGGER_FUNC).forSpreadsheet(ss).onEdit().create();
-  toast_(`毎月1日0時台に当月シートを作成し、毎日${hour}時台に報告シートへ反映します。案件マスタの編集でサマリも更新します。`, 10);
+  toast_(`毎月1日0時台に当月シートを作成し、毎日${hour}時台に報告シートへ反映します。`, 10);
 }
 
 function menuRemoveTrigger() {
@@ -164,7 +152,7 @@ function menuRemoveTrigger() {
 
 /** このプロジェクトのトリガーをすべて削除し、削除した数を返します。 */
 function removeTriggers_() {
-  const funcs = [MONTHLY_TRIGGER_FUNC, DAILY_TRIGGER_FUNC, EDIT_TRIGGER_FUNC];
+  const funcs = [MONTHLY_TRIGGER_FUNC, DAILY_TRIGGER_FUNC, LEGACY_EDIT_TRIGGER_FUNC];
   const targets = ScriptApp.getProjectTriggers().filter((t) => funcs.includes(t.getHandlerFunction()));
   targets.forEach((t) => ScriptApp.deleteTrigger(t));
   return targets.length;
