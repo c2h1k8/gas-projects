@@ -34,10 +34,3 @@ function checkAttendanceNoon() {
 function checkAttendanceNight() {
   MainProc.checkAttendanceOmissions('night');
 }
-
-/**
- * 前月確定サマリートリガー（毎月1日9時想定）。確定した前月の総稼働・残業を通知。
- */
-function summaryPrevMonth() {
-  MainProc.notifyPrevMonthSummary();
-}
