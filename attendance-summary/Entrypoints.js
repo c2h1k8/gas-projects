@@ -29,31 +29,13 @@ function onOpen() {
  * @param full 全期間を読み直すか
  * @return 件数
  */
-function runRefresh_(full, onProgress) {
+function runRefresh_(full) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) throw new Error('別の更新が実行中です。しばらく待ってから再実行してください。');
   try {
-    return SummaryService.refresh(full, onProgress);
+    return SummaryService.refresh(full);
   } finally {
     lock.releaseLock();
-  }
-}
-
-/**
- * 進捗ダイアログを出しながら更新します。
- *
- * 勤務表を1件ずつ開くので、全期間の再集計は分単位で待たされます。
- * トーストだと消えてしまい今どこまで進んだか分からないため、
- * 共通のローディング画面に「何月を読んでいるか」を出し続けます。
- */
-function runWithProgress_(startHint, full) {
-  LoadingUI.open(startHint);
-  try {
-    const result = runRefresh_(full, (message) => LoadingUI.hint(message));
-    LoadingUI.complete(describe_(result));
-  } catch (e) {
-    LoadingUI.error(e.message);
-    throw e;
   }
 }
 
@@ -63,14 +45,18 @@ function dailyRefresh() {
   Logger.log('[dailyRefresh] 読込%s件 / スキップ%s件', r.read, r.skipped);
 }
 
-/** メニュー: 今すぐ更新（差分） */
+/**
+ * メニュー: 今すぐ更新（差分）
+ * 勤務表を1件ずつ開くので時間がかかる。進捗ダイアログで「準備 → 月ごとの読み込み → 書き込み」を
+ * 手順ごとに実行し、どの月を読んでいるかと残りを見せる（手順の定義は StepActions.js）。
+ */
 function menuRefresh() {
-  runWithProgress_('更新しています…', false);
+  StepDialog.open('refresh', { full: false });
 }
 
 /** メニュー: 全期間を再集計 */
 function menuRefreshAll() {
-  runWithProgress_('全期間を再集計しています…', true);
+  StepDialog.open('refresh', { full: true });
 }
 
 /**

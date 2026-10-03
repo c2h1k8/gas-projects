@@ -41,6 +41,7 @@ copy_files "notion-checked-time" "common"       "CoreUtils.js" "Props.js"
 copy_files "notion-checked-time" "notion-common" "NotionApi.js" "NotionPayload.js"
 copy_files "line-attendance"     "common"        "CoreUtils.js" "Props.js" "GoogleApi.js" "LockUtil.js" "DateUtils.js" "LineUtil.js"
 copy_files "gmail-auto-delete"  "common"        "CoreUtils.js" "Props.js" "SpreadUtils.js"
-copy_files "attendance-summary" "common"        "DateUtils.js" "Props.js" "CoreUtils.js" "LoadingUi.js" "Loading.html"
+copy_files "attendance-summary" "common"        "DateUtils.js" "Props.js" "CoreUtils.js" "StepDialog.js" "StepDialogView.html"
+copy_files "project-hours"      "common"        "DateUtils.js" "StepDialog.js" "StepDialogView.html"
 
 echo "Done."
