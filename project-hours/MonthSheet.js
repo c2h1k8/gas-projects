@@ -1,10 +1,10 @@
 /**
  * 月シート（1日1行で、案件ごとの工数を入力する）。
  *
- * 1日に案件枠を Layout.SLOT_COUNT 個並べ、各枠で「案件（プルダウン）と工数」を入力します。
+ * 1日に案件枠を設定シートの数だけ並べ、各枠で「案件（プルダウン）と工数」を入力します。
  * 日合計・月合計・見込み・案件別集計はすべてシート上の数式なので、入力するとその場で反映されます。
  *
- * 工数の入力単位（時間／分）と案件の選び方は作成時に設定シートから決め、そのシートでは固定です。
+ * 工数の入力単位（時間／分）・案件の選び方・案件枠の数は作成時に設定シートから決め、そのシートでは固定です。
  * 作成時の値はシートの開発者メタデータに残し、サマリと報告シートへの反映が値の意味を知るのに使います。
  * 合計はどちらの単位でも時:分（日の割合）に揃えるので、サマリは単位の違う月を混ぜて扱えます。
  */
@@ -61,14 +61,18 @@ const MonthSheet = (function () {
     return summary + 1; // サマリが無ければ先頭（-1 + 1 = 0）
   };
 
-  /** 作成時の入力単位と案件の選び方を返します（メタデータが無い古いシートは既定値）。 */
+  /** 作成時の入力単位・案件の選び方・案件枠の数を返します（メタデータが無い古いシートは既定値）。 */
   const settingsOf = (sheet) => {
     const meta = new Map(sheet.getDeveloperMetadata().map((m) => [m.getKey(), m.getValue()]));
     return {
       unit: meta.get(Layout.META.UNIT) || Layout.UNIT.HOURS,
       pick: meta.get(Layout.META.PICK) || Layout.PICK.LABEL,
+      slots: Number(meta.get(Layout.META.SLOTS)) || Layout.SETTINGS.SLOTS.value,
     };
   };
+
+  /** 案件枠の番号（0始まり）の一覧 */
+  const slotIndexes_ = (slots) => [...Array(slots).keys()];
 
   /** 入力値（時間または分）を時:分の値（日の割合）に直す式 */
   const toDuration_ = (unit, expr) => `(${expr})/${unit === Layout.UNIT.MINUTES ? 1440 : 24}`;
@@ -80,7 +84,7 @@ const MonthSheet = (function () {
    * @param prefix 他シートから参照するときのシート名（'2026-10'!）。同じシート内なら ''
    * @param keys { code, name, short } それぞれ数式（変数名や "P001" のような文字列リテラル）
    */
-  const sumExpr_ = (prefix, pick, keys, first, last) => {
+  const sumExpr_ = (prefix, pick, slots, keys, first, last) => {
     const sep = Layout.LABEL_SEPARATOR;
     const match = {
       [Layout.PICK.LABEL]: (r) => `(LEFT(${r}, LEN(${keys.code})+${sep.length})=${keys.code}&"${sep}")`,
@@ -89,7 +93,7 @@ const MonthSheet = (function () {
       [Layout.PICK.NAME]: (r) => `(${keys.name}<>"")*(${r}&""=${keys.name})`,
       [Layout.PICK.SHORT]: (r) => `(${keys.short}<>"")*(${r}&""=${keys.short})`,
     }[pick];
-    return [...Array(Layout.SLOT_COUNT).keys()].map((i) => {
+    return slotIndexes_(slots).map((i) => {
       const code = a1(Layout.slotCodeCol(i));
       const hours = a1(Layout.slotHoursCol(i));
       const r = `${prefix}$${code}$${first}:$${code}$${last}`;
@@ -98,18 +102,20 @@ const MonthSheet = (function () {
   };
 
   const build_ = (ss, sheet) => {
-    const { unit, pick, stepMin } = SettingsSheet.read(ss);
+    const { unit, pick, stepMin, slots } = SettingsSheet.read(ss);
     const isMin = unit === Layout.UNIT.MINUTES;
     const firstDate = firstDateOf_(sheet.getName());
     const { first, last, days } = dayRows_(sheet.getName());
-    const width = C.NOTE;
+    const note = Layout.noteCol(slots);
+    const width = note;
     const col = (c) => `${a1(c)}${first}:${a1(c)}${last}`;
-    const hoursCols = [...Array(Layout.SLOT_COUNT).keys()].map((i) => Layout.slotHoursCol(i));
+    const hoursCols = slotIndexes_(slots).map((i) => Layout.slotHoursCol(i));
 
     Style.fitSize(sheet, last, width);
     Style.base(sheet, Style.COLOR.TAB_MONTH);
     sheet.addDeveloperMetadata(Layout.META.UNIT, unit);
     sheet.addDeveloperMetadata(Layout.META.PICK, pick);
+    sheet.addDeveloperMetadata(Layout.META.SLOTS, String(slots));
 
     // タイトル（右に作成時の設定を小さく添える）
     Style.title(sheet, Utilities.formatDate(firstDate, Session.getScriptTimeZone(), 'yyyy年M月'), C.DAY_TOTAL);
@@ -121,11 +127,11 @@ const MonthSheet = (function () {
     headers[C.DATE - 1] = '日付';
     headers[C.DOW - 1] = '曜日';
     headers[C.DAY_TOTAL - 1] = '日合計';
-    for (let i = 0; i < Layout.SLOT_COUNT; i++) {
+    for (let i = 0; i < slots; i++) {
       headers[Layout.slotCodeCol(i) - 1] = `案件 ${i + 1}`;
       headers[Layout.slotHoursCol(i) - 1] = `工数（${unit}）`;
     }
-    headers[C.NOTE - 1] = '備考';
+    headers[note - 1] = '備考';
     Style.header(sheet.getRange(C.HEADER_ROW, 1, 1, width).setValues([headers]));
 
     // 日付・曜日・日合計
@@ -180,10 +186,10 @@ const MonthSheet = (function () {
       .setNote('月合計に、今日以降でまだ入力していない営業日を所定労働時間（設定シート）で埋めた分を足した値です。');
 
     // 案件別集計（月合計の右に、案件枠の列に合わせて横に並べる）
-    const cap = Layout.SLOT_COUNT * C.AGG_ROWS;
+    const cap = slots * C.AGG_ROWS;
     sheet.getRange(C.AGG_TITLE_ROW, C.AGG_FIRST_COL).setValue(`案件別集計（最大${cap}件。全件はサマリ）`)
       .setFontColor(Style.COLOR.MUTED).setFontSize(9);
-    sheet.getRange(C.AGG_FIRST_ROW, C.AGG_FIRST_COL).setFormula(aggregateFormula_(unit, pick, first, last));
+    sheet.getRange(C.AGG_FIRST_ROW, C.AGG_FIRST_COL).setFormula(aggregateFormula_(unit, pick, slots, first, last));
     for (let c = C.AGG_FIRST_COL; c < width; c += 2) {
       sheet.getRange(C.AGG_FIRST_ROW, c, C.AGG_ROWS, 1).setFontColor(Style.COLOR.MUTED).setFontSize(9).setHorizontalAlignment('right');
       sheet.getRange(C.AGG_FIRST_ROW, c + 1, C.AGG_ROWS, 1).setNumberFormat(Layout.HM_FORMAT).setFontWeight('bold')
@@ -199,7 +205,7 @@ const MonthSheet = (function () {
     const step = isMin ? stepMin : stepMin / 60;
     const max = isMin ? Layout.DAY_HOURS_MAX * 60 : Layout.DAY_HOURS_MAX;
     const example = isMin ? '1時間半なら 90' : '1時間半なら 1.5';
-    for (let i = 0; i < Layout.SLOT_COUNT; i++) {
+    for (let i = 0; i < slots; i++) {
       sheet.getRange(first, Layout.slotCodeCol(i), days, 1).setDataValidation(projectRule);
       const h = `${a1(Layout.slotHoursCol(i))}${first}`;
       sheet.getRange(first, Layout.slotHoursCol(i), days, 1)
@@ -211,7 +217,7 @@ const MonthSheet = (function () {
           .build());
     }
 
-    setConditionalRules_(sheet, first, days);
+    setConditionalRules_(sheet, first, days, slots);
 
     // 集計欄と見出しの行、日付〜日合計の3列を固定する
     sheet.setFrozenRows(C.HEADER_ROW);
@@ -219,17 +225,17 @@ const MonthSheet = (function () {
     sheet.setColumnWidth(C.DATE, 56);
     sheet.setColumnWidth(C.DOW, 56);
     sheet.setColumnWidth(C.DAY_TOTAL, 76);
-    for (let i = 0; i < Layout.SLOT_COUNT; i++) {
+    for (let i = 0; i < slots; i++) {
       sheet.setColumnWidth(Layout.slotCodeCol(i), 170);
       sheet.setColumnWidth(Layout.slotHoursCol(i), 84); // 見出し「工数（時間）」が折り返さない幅
     }
-    sheet.setColumnWidth(C.NOTE, 220);
+    sheet.setColumnWidth(note, 220);
 
     // 入力欄（案件・工数・備考）以外は数式や自動生成なので、編集時に警告を出す
     const protection = sheet.protect().setDescription('日付・合計・集計は自動生成のため編集不可').setWarningOnly(true);
     protection.setUnprotectedRanges([
-      sheet.getRange(first, C.FIRST_SLOT, days, Layout.SLOT_COUNT * 2),
-      sheet.getRange(first, C.NOTE, days, 1),
+      sheet.getRange(first, C.FIRST_SLOT, days, slots * 2),
+      sheet.getRange(first, note, days, 1),
     ]);
   };
 
@@ -238,22 +244,22 @@ const MonthSheet = (function () {
    * 工数がある案件だけを「コード：略称（無ければ案件名）, 時:分」の組で横に並べ、
    * 案件枠の数で次の行へ折り返す（1つの数式が展開する。収まらない分は切り捨てる）。
    */
-  const aggregateFormula_ = (unit, pick, first, last) => {
+  const aggregateFormula_ = (unit, pick, slots, first, last) => {
     const sep = Layout.LABEL_SEPARATOR;
     const { codes, names, shorts } = MasterSheet.formulaRanges();
     const only = (r) => `FILTER(${r}, ${codes}<>"")`;
-    const sums = sumExpr_('', pick, { code: 'x', name: 'y', short: 'z' }, first, last);
+    const sums = sumExpr_('', pick, slots, { code: 'x', name: 'y', short: 'z' }, first, last);
     return `=IFERROR(LET(c, ${only(codes)}, n, ${only(names)}, s, ${only(shorts)}, `
       + `h, MAP(c, n, s, LAMBDA(x, y, z, ${toDuration_(unit, sums)})), `
       + `pairs, TOROW(FILTER(HSTACK(c&"${sep}"&IF(s="", n, s), h), h>0)), `
-      + `TAKE(WRAPROWS(pairs, ${Layout.SLOT_COUNT * 2}, ""), ${C.AGG_ROWS})), "")`;
+      + `TAKE(WRAPROWS(pairs, ${slots * 2}, ""), ${C.AGG_ROWS})), "")`;
   };
 
   /** 条件付き書式（入力漏れ・日合計の超過・今日の行）。 */
-  const setConditionalRules_ = (sheet, first, days) => {
+  const setConditionalRules_ = (sheet, first, days, slots) => {
     const rules = [];
     // 案件と工数は2つ揃って1件。片方だけ入っていたら両方を赤くする
-    for (let i = 0; i < Layout.SLOT_COUNT; i++) {
+    for (let i = 0; i < slots; i++) {
       const code = a1(Layout.slotCodeCol(i));
       const hours = a1(Layout.slotHoursCol(i));
       rules.push(SpreadsheetApp.newConditionalFormatRule()
@@ -279,7 +285,7 @@ const MonthSheet = (function () {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied(isToday)
       .setBackground(Style.COLOR.TODAY_BG)
-      .setRanges([sheet.getRange(first, 1, days, C.NOTE)])
+      .setRanges([sheet.getRange(first, 1, days, Layout.noteCol(slots))])
       .build());
     sheet.setConditionalFormatRules(rules);
   };
@@ -296,11 +302,11 @@ const MonthSheet = (function () {
    */
   const projectTotalFormula = (sheet, project) => {
     const name = sheet.getName();
-    const { unit, pick } = settingsOf(sheet);
+    const { unit, pick, slots } = settingsOf(sheet);
     const { first, last } = dayRows_(name);
     const lit = (v) => `"${String(v).replace(/"/g, '""')}"`;
     const keys = { code: lit(project.code), name: lit(project.name), short: lit(project.short) };
-    return `=${toDuration_(unit, sumExpr_(Layout.sheetRef(name), pick, keys, first, last))}`;
+    return `=${toDuration_(unit, sumExpr_(Layout.sheetRef(name), pick, slots, keys, first, last))}`;
   };
 
   /**
@@ -309,7 +315,7 @@ const MonthSheet = (function () {
    * @return [{ date, project, minutes }]（日付順、同じ日はマスタの順）
    */
   const readEntries = (sheet, projects) => {
-    const { unit, pick } = settingsOf(sheet);
+    const { unit, pick, slots } = settingsOf(sheet);
     const { first, days } = dayRows_(sheet.getName());
     const sep = Layout.LABEL_SEPARATOR;
     const find = {
@@ -319,12 +325,12 @@ const MonthSheet = (function () {
       [Layout.PICK.SHORT]: (v) => projects.find((p) => p.short !== '' && v === p.short),
     }[pick];
     const perMinute = unit === Layout.UNIT.MINUTES ? 1 : 60;
-    const values = sheet.getRange(first, 1, days, C.NOTE).getValues();
+    const values = sheet.getRange(first, 1, days, Layout.noteCol(slots)).getValues();
     const entries = [];
     values.forEach((row) => {
       const date = row[C.DATE - 1];
       const perDay = new Map();
-      for (let i = 0; i < Layout.SLOT_COUNT; i++) {
+      for (let i = 0; i < slots; i++) {
         const value = String(row[Layout.slotCodeCol(i) - 1]).trim();
         const hours = row[Layout.slotHoursCol(i) - 1];
         if (!value || typeof hours !== 'number' || hours <= 0) continue;

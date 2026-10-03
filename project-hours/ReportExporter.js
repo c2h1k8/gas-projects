@@ -87,11 +87,11 @@ const ReportExporter = (function () {
     });
   };
 
-  /** 毎晩の反映の対象（当月、月初の数日は前月も）。作成済みの月シートだけ返します。 */
+  /** 毎日の反映の対象（当月、月初の数日は前月も）。作成済みの月シートだけ返します。 */
   const targetsForToday = (ss) => {
     const today = new Date();
     const dates = [today];
-    if (today.getDate() <= Layout.REPORT_PREV_MONTH_DAYS) dates.push(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+    if (today.getDate() <= SettingsSheet.reportPrevDays(ss)) dates.push(new Date(today.getFullYear(), today.getMonth() - 1, 1));
     return dates.map((d) => ss.getSheetByName(MonthSheet.nameOf(d))).filter((s) => s);
   };
 
