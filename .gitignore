@@ -33,4 +33,5 @@ attendance-summary/Props.js
 attendance-summary/CoreUtils.js
 attendance-summary/LoadingUi.js
 attendance-summary/Loading.html
+project-hours/DateUtils.js
 .DS_Store
