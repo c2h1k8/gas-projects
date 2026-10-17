@@ -141,4 +141,10 @@ const MainProcMailAI = (() => {
  */
 function CreateHouseholdAccountFromMailAI() {
   MainProcMailAI.create();
+  // FX の約定メールも同じトリガーで拾う（トリガーを増やさない）。失敗しても支出の登録は済んでいる
+  try {
+    MainProcFxFill.create();
+  } catch (e) {
+    Logger.log(`[FxFill] ${e && e.stack || e}`);
+  }
 }
