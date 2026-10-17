@@ -173,6 +173,30 @@ const MoneyApi = (() => {
   };
 
   /**
+   * FX の約定を1件登録する（POST /api/fx/fills）。新規か決済かは money が振り分ける
+   * （反対の売買の未決済が無ければ新規、あれば確認待ち）。同じ注文番号がもうあれば何もしない。
+   * @param {{orderNum, tradeDate, pairCd, directionCd, lot, price}} f
+   * @return {{created: boolean, kind?: 'entry'|'pending'}|null} 失敗/未設定は null
+   */
+  const registerFxFill = (f) => {
+    const r = _request('post', '/api/fx/fills', {
+      order_num: f.orderNum, trade_date: f.tradeDate, pair_cd: f.pairCd,
+      direction_cd: f.directionCd, lot: f.lot, price: f.price,
+    });
+    if (!r) return null;
+    const ok = r.code >= 200 && r.code < 300;
+    Logger.log(`[MoneyApi] fx fill ${f.orderNum} -> ${r.code}${ok ? ' ' + r.text : ' ' + r.text}`);
+    if (!ok) return null;
+    try { return JSON.parse(r.text); } catch (e) { return null; }
+  };
+
+  /** money の画面の URL（通知カードのリンク用）。未設定なら null */
+  const appUrl = (hash) => {
+    const base = Props.getValue(PKeys.MONEY_API_URL);
+    return base ? `${base.replace(/\/$/, '')}/${hash || ''}` : null;
+  };
+
+  /**
    * スプレッドシート マスタ更新用の名称リストを取得する。
    * categories は支出カテゴリ（KIND='EXPENSE_CATEGORY'）、incomeCategories は
    * 収入カテゴリ（KIND='INCOME_CATEGORY'）＝軸が違う別マスタなので混ぜない。
@@ -190,5 +214,6 @@ const MoneyApi = (() => {
     updateSpending, updateIncome,
     deleteSpending, deleteIncome,
     getMasters, pushNotify,
+    registerFxFill, appUrl,
   };
 })();

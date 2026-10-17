@@ -39,7 +39,46 @@ const NotifyCards = (() => {
     return { type: 'box', layout: 'vertical', spacing: 'none', margin: 'md', contents: c };
   };
 
+  // FX の約定1件の行（▲買 1 Lot @157.834 と注文番号）
+  const fxRow = (f, color) => ({
+    type: 'box', layout: 'vertical', spacing: 'none', margin: 'md',
+    contents: [
+      { type: 'box', layout: 'horizontal', contents: [
+        text(`${f.directionCd === '001' ? '▲買' : '▼売'} ${f.lot} Lot`, { size: 'sm', color: color || DARK, weight: 'bold', flex: 4 }),
+        text(`@${Number(f.price).toFixed(3)}`, { size: 'sm', color: DARK, align: 'end', flex: 4 }),
+      ] },
+      text(`${f.pair}・${String(f.tradeDate).slice(5, 16)}・${f.orderNum}`, { size: 'xs', color: GRAY, wrap: true }),
+    ],
+  });
+
   return {
+    /**
+     * FX の約定メールの登録結果（1カード集約）。
+     * 確認待ち＝新規か決済かが決まらない約定（反対の売買の建玉がある）。money の画面で振り分ける。
+     * @param {{entry, pending, fail}} r 各 [{pair, directionCd, lot, price, orderNum, tradeDate}]
+     * @param {string|null} url ポジション照会の URL
+     */
+    fxFillResult: ({ entry, pending, fail }, url) => {
+      const body = [];
+      const group = (title, color, items, note) => {
+        if (!items || !items.length) return;
+        body.push(text(title, { weight: 'bold', size: 'sm', color, margin: body.length ? 'lg' : 'none' }));
+        if (note) body.push(text(note, { size: 'xs', color: GRAY, wrap: true }));
+        items.forEach((f) => body.push(fxRow(f, color)));
+      };
+      group('確認待ち', ORANGE, pending, '新規か決済かを画面で選んでください');
+      group('新規の建玉', GREEN, entry);
+      group('失敗', RED, fail);
+      const head = (fail && fail.length) ? RED : (pending && pending.length) ? ORANGE : GREEN;
+      const card = shell(head, 'FX の約定', body);
+      if (url && pending && pending.length) {
+        card.footer = { type: 'box', layout: 'vertical', contents: [
+          { type: 'button', style: 'link', height: 'sm', action: { type: 'uri', label: '振り分ける', uri: url } },
+        ] };
+      }
+      return card;
+    },
+
     /**
      * メール自動登録 結果（1カード集約）。
      * @param {{success, skip, fail}} p  各 [{label, amount, sub}]
