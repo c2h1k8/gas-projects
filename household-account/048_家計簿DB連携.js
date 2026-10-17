@@ -175,12 +175,13 @@ const MoneyApi = (() => {
   /**
    * FX の約定を1件登録する（POST /api/fx/fills）。新規か決済かは money が振り分ける
    * （反対の売買の未決済が無ければ新規、あれば確認待ち）。同じ注文番号がもうあれば何もしない。
-   * @param {{orderNum, tradeDate, pairCd, directionCd, lot, price}} f
+   * 通貨ペアは**名前**（"USD/JPY"）で送る＝money が M_CODE_MASTER から引く（支出のカテゴリと同じ）。
+   * @param {{orderNum, tradeDate, pair, directionCd, lot, price}} f
    * @return {{created: boolean, kind?: 'entry'|'pending'}|null} 失敗/未設定は null
    */
   const registerFxFill = (f) => {
     const r = _request('post', '/api/fx/fills', {
-      order_num: f.orderNum, trade_date: f.tradeDate, pair_cd: f.pairCd,
+      order_num: f.orderNum, trade_date: f.tradeDate, pair: f.pair,
       direction_cd: f.directionCd, lot: f.lot, price: f.price,
     });
     if (!r) return null;

@@ -2,7 +2,7 @@
  * FX の約定メール（DMM FX「注文約定のお知らせ」）から money へ約定を登録する。
  *
  * 文面は「■ 約定内容」の下に「項目 : 値」が並ぶ決まった形なので、支出のメール登録と違い
- * Gemini は使わず文面をそのまま読む：
+ * Gemini は使わず文面をそのまま読む（検索条件・項目名などはスクリプトプロパティ FX_FILL_SETTING）：
  *   通貨ペア : 米ﾄﾞﾙ/円 ／ 売買 : 売 ／ 注文方法 : 成行 ／ 取引数量 : 10,000 ／ 約定価格 : 160.226 ／ 注文番号 : …
  *
  * **新規か決済かはメールに書かれていない**（件名も本文も同じ形）。なので money の
@@ -16,47 +16,49 @@
 const MainProcFxFill = (() => {
   const CONFIG = {
     DEBUG: false,
-    // 対象のメール＝Gmail のラベル「FX」のうち、スター付きの約定のお知らせ。ラベルには約定以外の
-    // FX のメールも入りうるので件名でも絞る（読めない本文はスターが残り、毎回読み直しになるため）
-    SEARCH: 'label:FX subject:注文約定のお知らせ is:starred',
+    // 検索条件・本文の項目名・単位・通貨名はスクリプトプロパティ FX_FILL_SETTING（JSON）に置く
+    // （支出のメール登録の AUTO_REGIST_SETTING_LIST と同じ流儀＝コードを変えずに運用で直せる）
+    get SETTING() { return Props.getJson(PKeys.FX_FILL_SETTING); },
   };
-
-  // 通貨名（メールは半角カナ＝NFKC で全角へ揃えてから引く）
-  const CCY = { '米ドル': 'USD', 'ユーロ': 'EUR', '英ポンド': 'GBP', 'ポンド': 'GBP', '豪ドル': 'AUD',
-                '南アランド': 'ZAR', 'ランド': 'ZAR', '円': 'JPY' };
-  // money の通貨ペアコード（M_CODE_MASTER KIND='FX_CURRENCY_PAIR'）
-  const PAIR_CD = { 'USD/JPY': '001', 'EUR/JPY': '002', 'GBP/JPY': '003', 'AUD/JPY': '004', 'ZAR/JPY': '005', 'AUD/USD': '006' };
 
   /**
    * 本文から約定を読む。読めなければ null。
-   * @return {{pair, pairCd, directionCd, lot, price, orderNum}|null}
+   * 通貨ペアは "USD/JPY" の**名前**で返す（money がマスタから引く＝GAS はコード表を持たない）。
+   * @return {{pair, directionCd, lot, price, orderNum}|null}
    */
-  const parse = (body) => {
+  const parse = (body, setting) => {
+    const { FIELDS, SIDE_BUY, SIDE_SELL, LOT_UNIT, CURRENCY } = setting;
     const kv = {};
     String(body || '').normalize('NFKC').split(/\r?\n/).forEach((line) => {
       const m = line.match(/^\s*([^:：]+?)\s*[:：]\s*(.+?)\s*$/);
       if (m) kv[m[1].replace(/\s/g, '')] = m[2];
     });
-    const [a, b] = (kv['通貨ペア'] || '').split('/').map((x) => CCY[x.trim()] || x.trim());
+    const [a, b] = (kv[FIELDS.PAIR] || '').split('/').map((x) => CURRENCY[x.trim()] || x.trim());
     const pair = a && b ? `${a}/${b}` : '';
-    const directionCd = /買/.test(kv['売買'] || '') ? '001' : /売/.test(kv['売買'] || '') ? '002' : '';
-    const qty = parseFloat((kv['取引数量'] || '').replace(/[^\d.]/g, ''));
-    const price = parseFloat((kv['約定価格'] || '').replace(/[^\d.]/g, ''));
-    const orderNum = (kv['注文番号'] || '').replace(/\s/g, '');
-    if (!PAIR_CD[pair] || !directionCd || !qty || !price || !orderNum) return null;
-    return { pair, pairCd: PAIR_CD[pair], directionCd, lot: Math.round(qty / 10000), price, orderNum };   // 1 Lot = 1万通貨
+    const side = kv[FIELDS.SIDE] || '';
+    const directionCd = side.includes(SIDE_BUY) ? '001' : side.includes(SIDE_SELL) ? '002' : '';
+    const qty = parseFloat((kv[FIELDS.QTY] || '').replace(/[^\d.]/g, ''));
+    const price = parseFloat((kv[FIELDS.PRICE] || '').replace(/[^\d.]/g, ''));
+    const orderNum = (kv[FIELDS.ORDER] || '').replace(/\s/g, '');
+    if (!pair || !directionCd || !qty || !price || !orderNum) return null;
+    return { pair, directionCd, lot: Math.round(qty / (LOT_UNIT || 10000)), price, orderNum };
   };
 
   return {
     create: () => {
-      const threads = GmailApp.search(CONFIG.SEARCH);
+      const setting = CONFIG.SETTING;
+      if (!setting || !setting.SEARCH_WORD) {
+        Logger.log(`[FxFill] ${PKeys.FX_FILL_SETTING} 未設定のためスキップ`);   // 未設定＝安全に無効
+        return;
+      }
+      const threads = GmailApp.search(setting.SEARCH_WORD);
       if (!threads.length) return;
       const results = { entry: [], pending: [], skip: [], fail: [] };
 
       for (const thread of threads) {
         for (const message of thread.getMessages()) {
           if (!message.isStarred()) continue;
-          const fill = parse(message.getPlainBody());
+          const fill = parse(message.getPlainBody(), setting);
           if (!fill) { Logger.log(`[FxFill] 読めない本文: ${message.getSubject()}`); continue; }
           const tradeDate = Utilities.formatDate(message.getDate(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
           const item = { ...fill, tradeDate };
@@ -89,5 +91,5 @@ function CreateFxFillsFromMail() {
 /** 文面の読み取りの確認（GAS エディタから手で実行） */
 function TestParseFxFillMail() {
   const body = '■ 約定内容\n通貨ペア : 米ﾄﾞﾙ/円\n　　売買 : 売\n注文方法 : 成行\n取引数量 : 10,000\n約定価格 : 160.226\n注文番号 : 126000042537027\n';
-  Logger.log(JSON.stringify(MainProcFxFill.parse(body)));
+  Logger.log(JSON.stringify(MainProcFxFill.parse(body, Props.getJson(PKeys.FX_FILL_SETTING))));
 }
