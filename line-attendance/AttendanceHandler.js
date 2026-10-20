@@ -592,8 +592,9 @@ const MainProc = (function () {
       postErrMsgFileNotFound(replyToken, date);
       return;
     }
-    const { totalTime, workDays, diffTotal, rows, dayCounts } = calculateTotalTime(sheet, date);
-    const summary = summaryData(totalTime, workDays, diffTotal, diffMonths === '');
+    const totals = calculateTotalTime(sheet, date);
+    const { workDays, rows, dayCounts } = totals;
+    const summary = summaryData(totals, diffMonths === '');
     // 日数サマリー（稼働は常時表示／その他は0件は非表示。数字を種別色で表示）
     const dayItems = [{ label: '稼働', count: workDays, type: TYPE.WORKING }];
     if (dayCounts.paid) dayItems.push({ label: '有給', count: dayCounts.paid, type: TYPE.HOLIDAY });
@@ -604,6 +605,7 @@ const MainProc = (function () {
       title: `${DateUtils.formatDate(date, 'yyyy年 M月')} 稼働`,
       total: summary.total,
       overtime: summary.overtime,
+      overtimeSite: summary.overtimeSite,
       forecast: summary.forecast,
       days: dayItems,
       // 工数のある日＋欠勤/有給/代休（休んだ日も俯瞰できるよう表示）
@@ -641,35 +643,37 @@ const MainProc = (function () {
   /**
    * 指定日の月の集計データ（文字列）を返します。
    * 集計範囲はmonthSummaryScope_に従い、対象日ではなく今日を基準に打ち切る。
-   * @return {{ total, overtime, forecast }} いずれもnull可
+   * @return {{ total, overtime, overtimeSite, forecast }} いずれもnull可
    */
   const getMonthSummaryData = (date) => {
     const sheet = getMainSheet(date);
     const { through, showTotals, showForecast } = monthSummaryScope_(date);
     if (!showTotals) {
       // 未来月は行を読まず、シートの月合計セル（予定込み）から見込みだけ組み立てる
-      return summaryData(sheet.getRange(RNG_TTL).getValue(), 0, null, showForecast);
+      return summaryData({ totalTime: sheet.getRange(RNG_TTL).getValue(), diffTotal: null }, showForecast);
     }
-    const { totalTime, workDays, diffTotal } = calculateTotalTime(sheet, through);
-    return summaryData(totalTime, workDays, diffTotal, showForecast);
+    return summaryData(calculateTotalTime(sheet, through), showForecast);
   }
 
   /**
    * サマリーの表示文字列を組み立てます。
-   * @param diffTotal 実績の合計（分）。nullなら合計・残業を出さない（未来月）
+   * 残業は出勤・休日出勤の工数から出す（有給・代休の工数は含めない）。
+   * overtime＝会社（丸め前。36協定の判定に使う）、overtimeSite＝現場（丸め後）。
+   * @param totals calculateTotalTime の結果。diffTotal が null なら合計・残業を出さない（未来月）
    */
-  const summaryData = (totalTime, workDays, diffTotal, showForecast) => {
+  const summaryData = ({ totalTime, workDays, diffTotal, workedTotal, rawTotal }, showForecast) => {
     let forecast = null;
     if (showForecast) {
       const forecastHour = (totalTime.getDate() + 1) * 24 + totalTime.getHours();
       const forecastMin = DateUtils.formatDate(totalTime, 'mm');
       forecast = `${forecastHour}:${forecastMin}`;
     }
-    if (diffTotal === null) return { total: null, overtime: null, forecast };
-    const overtime = diffTotal - workDays * 8 * 60;
+    if (diffTotal === null) return { total: null, overtime: null, overtimeSite: null, forecast };
+    const std = workDays * STD_WORK_MIN;
     return {
       total: convertMinutes2Hour(diffTotal),
-      overtime: convertMinutes2Hour(overtime),
+      overtime: convertMinutes2Hour(rawTotal - std),
+      overtimeSite: convertMinutes2Hour(workedTotal - std),
       forecast,
     };
   };
@@ -686,16 +690,91 @@ const MainProc = (function () {
   };
 
   /**
+   * 丸める前の実働（分）を返します。会社の残業（36協定）はこちらで管理する。
+   *
+   * 勤務表の実働（AD列）は現場向けに出社・退社・合計を丸めた値なので、
+   * 打刻そのままの出社・退社と休憩から、会社の丸め単位で計算し直す（退社 − 出社 − 休憩）。
+   * 出社・退社が無い行（工数だけ手で入れた日など）は丸め後の実働で代える。
+   * @param row 勤務表の1行（休憩の列まで読んだもの）
+   * @param diff 丸め後の実働（'HH:mm'）
+   */
+  const rawWorkMinutes_ = (row, diff) => {
+    const start = getTime(row[COLUMN_META.START.IDX]);
+    const end = getTime(row[COLUMN_META.END.IDX]);
+    if (!start || !end) return diff ? convertHour2Minutes(diff) : 0;
+    // 丸め方は勤務表の数式（現場）と同じ：出社は切上、退社は切捨、実働は切捨
+    const unit = companyRoundUnits_();
+    const startMin = Math.ceil(convertHour2Minutes(start) / unit.calc) * unit.calc;
+    const endMin = Math.floor(convertHour2Minutes(end) / unit.calc) * unit.calc;
+    let mins = endMin - startMin;
+    if (mins < 0) mins += 24 * 60; // 日付をまたいだ退社
+    const rest = getTime(row[COLUMN_META.BREAK.IDX]);
+    if (rest) mins -= convertHour2Minutes(rest);
+    return Math.max(Math.floor(mins / unit.total) * unit.total, 0);
+  };
+
+  /**
+   * 会社の丸め単位（分）を返します。未設定・不正値は1（丸めなし）。
+   * 1回の集計で行数ぶん呼ばれるので、実行中は最初に読んだ値を使い回す。
+   */
+  let companyRoundUnits = null;
+  const companyRoundUnits_ = () => {
+    if (companyRoundUnits) return companyRoundUnits;
+    const read = (key) => {
+      const n = Number(Props.getValue(key));
+      return n >= 1 ? n : 1;
+    };
+    companyRoundUnits = { calc: read(PKeys.ROUND_UNIT_COMPANY_CALC), total: read(PKeys.ROUND_UNIT_COMPANY_TOTAL) };
+    return companyRoundUnits;
+  };
+
+  /**
+   * 1日ぶんの勤怠区分を数えます（calculateTotalTime と computeRangeTotals で同じ基準にするため）。
+   *
+   * 土日祝の行は勤務表のひな形で「出勤」になっていることがある。稼働日数に数えると
+   * 所定が膨らむので、働いた日だけ休日出勤として扱う。
+   * 有給・代休・欠勤の工数は残業に入れない（稼働日数に入らないぶんがそのまま残業に乗るため）。
+   * @param dayCounts 区分別の日数。ここで加算する
+   * @return 'work'=稼働日（所定8hの対象）/ 'extra'=休日の労働（全て残業）/ ''=休み / null=未登録の日
+   */
+  const countDayType_ = (type, dayDate, diff, dayCounts) => {
+    switch (type) {
+      case TYPE.WORKING:
+        if (!(dayDate instanceof Date) || DateUtils.isBizDate(dayDate)) return 'work';
+        if (!diff) return '';
+        dayCounts.holidayWork++;
+        return 'extra';
+      case TYPE.HOLIDAY_WORKING:
+        dayCounts.holidayWork++;
+        return 'extra';
+      case TYPE.HOLIDAY:
+        dayCounts.paid++;
+        return '';
+      case TYPE.REST:
+        dayCounts.absent++;
+        return '';
+      case TYPE.DAIKYU:
+        dayCounts.daikyu++;
+        return '';
+      default:
+        return null;
+    }
+  };
+
+  /**
    * 月初〜打ち切り日の実績を集計します。
    * @param sheet メインシート
    * @param through 集計の打ち切り日。日付部分だけを見るため、未来日を渡すと未来行（既定で稼働）
    *   まで数えてしまう。呼び出し側で今日または過去月の末日に丸めること。
    */
   const calculateTotalTime = (sheet, through) => {
-    const values = sheet.getRange(13, COLUMN_META.DAY.NO, through.getDate(), COLUMN_META.DIFF.NO).getValues();
+    const values = sheet.getRange(13, COLUMN_META.DAY.NO, through.getDate(), ROW_WIDTH).getValues();
 
     let workDays = 0;
     let diffTotal = 0;
+    // 出勤・休日出勤の工数（残業の元）。現場＝丸め後、会社＝丸め前
+    let workedTotal = 0;
+    let rawTotal = 0;
     const rows = [];
     // 区分別の日数（稼働一覧の日数サマリーで使用）
     const dayCounts = { paid: 0, holidayWork: 0, absent: 0, daikyu: 0 };
@@ -707,30 +786,18 @@ const MainProc = (function () {
       const end = getTime(row[COLUMN_META.END.IDX]);
       const diff = getTime(row[COLUMN_META.DIFF.IDX]);
 
-      switch (type) {
-        case TYPE.WORKING:
-          workDays++;
-          break;
-        case TYPE.HOLIDAY:
-          dayCounts.paid++;
-          break;
-        case TYPE.HOLIDAY_WORKING:
-          dayCounts.holidayWork++;
-          break;
-        case TYPE.REST:
-          dayCounts.absent++;
-          break;
-        case TYPE.DAIKYU:
-          dayCounts.daikyu++;
-          break;
-        default:
-          continue
-      }
+      const worked = countDayType_(type, row[COLUMN_META.DAY.IDX], diff, dayCounts);
+      if (worked === null) continue;
+      if (worked === 'work') workDays++;
 
       let kosu = '';
       if (diff) {
         const mins = convertHour2Minutes(diff);
         diffTotal += mins;
+        if (worked) {
+          workedTotal += mins;
+          rawTotal += rawWorkMinutes_(row, diff);
+        }
         kosu = convertMinutes2Hour(mins);
       }
       rows.push({
@@ -743,7 +810,7 @@ const MainProc = (function () {
     }
 
     const totalTime = sheet.getRange(RNG_TTL).getValue();
-    return { totalTime, workDays, diffTotal, rows, dayCounts };
+    return { totalTime, workDays, diffTotal, workedTotal, rawTotal, rows, dayCounts };
   }
 
   // 過去推移で表示する月数
@@ -752,9 +819,17 @@ const MainProc = (function () {
   const OVERTIME_ALERT_MIN = 45 * 60;
   // 所定労働時間（分/日）。残業計算と同一基準（8時間）。
   const STD_WORK_MIN = 8 * 60;
+  // 月別キャッシュの計算の版。残業の定義を変えたら上げる（古い版のキャッシュは読み直す）
+  const MONTH_CACHE_VERSION = 3;
+  /** キャッシュの版。会社の丸め単位を変えたときも読み直すよう、単位を含める */
+  const monthCacheVersion_ = () => {
+    const unit = companyRoundUnits_();
+    return `${MONTH_CACHE_VERSION}/${unit.calc}/${unit.total}`;
+  };
 
   /**
    * 当月ファイル内で from〜to（両端含む）の合計工数・残業（分）を集計します。
+   * 合計は現場（丸め後）、残業は会社（丸め前）と現場（丸め後）の両方を返す。
    * 工数の集計対象・残業計算は calculateTotalTime と同一基準。ファイルが無ければnull。
    * @param anchorDate 集計対象の月（通常は当日。読み取り行数の基準）
    * @param fromDate 集計開始日（0時）
@@ -763,38 +838,35 @@ const MainProc = (function () {
   const computeRangeTotals = (anchorDate, fromDate, toDate) => {
     const sheet = getMainSheet(anchorDate);
     if (!sheet) return null;
-    const values = sheet.getRange(13, COLUMN_META.DAY.NO, anchorDate.getDate(), COLUMN_META.DIFF.NO).getValues();
+    const values = sheet.getRange(13, COLUMN_META.DAY.NO, anchorDate.getDate(), ROW_WIDTH).getValues();
     let workDays = 0;
     let diffTotal = 0;
+    let workedTotal = 0;
+    let rawTotal = 0;
     // 区分別の日数（推移カードの休暇バッジ・年間集計で使用）
     const dayCounts = { paid: 0, holidayWork: 0, absent: 0, daikyu: 0 };
     for (const row of values) {
       const dayDate = row[COLUMN_META.DAY.IDX];
       if (!(dayDate instanceof Date)) continue;
       if (dayDate < fromDate || dayDate > toDate) continue;
-      switch (row[COLUMN_META.TYPE.IDX]) {
-        case TYPE.WORKING:
-          workDays++;
-          break;
-        case TYPE.HOLIDAY:
-          dayCounts.paid++;
-          break;
-        case TYPE.HOLIDAY_WORKING:
-          dayCounts.holidayWork++;
-          break;
-        case TYPE.REST:
-          dayCounts.absent++;
-          break;
-        case TYPE.DAIKYU:
-          dayCounts.daikyu++;
-          break;
-        default:
-          continue;
-      }
       const diff = getTime(row[COLUMN_META.DIFF.IDX]);
-      if (diff) diffTotal += convertHour2Minutes(diff);
+      const worked = countDayType_(row[COLUMN_META.TYPE.IDX], dayDate, diff, dayCounts);
+      if (worked === null) continue;
+      if (worked === 'work') workDays++;
+      if (!diff) continue;
+      const mins = convertHour2Minutes(diff);
+      diffTotal += mins;
+      if (worked) {
+        workedTotal += mins;
+        rawTotal += rawWorkMinutes_(row, diff);
+      }
     }
-    return { total: diffTotal, overtime: diffTotal - workDays * 8 * 60, workDays, dayCounts };
+    const std = workDays * STD_WORK_MIN;
+    // overtime＝会社（丸め前・36協定の判定に使う）、overtimeSite＝現場（丸め後）
+    return {
+      total: diffTotal, overtime: rawTotal - std, overtimeSite: workedTotal - std,
+      workDays, dayCounts, v: monthCacheVersion_(),
+    };
   };
 
   /**
@@ -835,7 +907,7 @@ const MainProc = (function () {
       const isCurrent = i === 0;
 
       let totals;
-      if (!isCurrent && cache[yyyymm]) {
+      if (!isCurrent && cache[yyyymm] && cache[yyyymm].v === monthCacheVersion_()) {
         // 確定済みの過去月はキャッシュを使用
         totals = cache[yyyymm];
       } else {
@@ -979,6 +1051,7 @@ const MainProc = (function () {
     if (month.total) noteParts.push(`当月 ${month.total}`);
     if (month.forecast) noteParts.push(`着地見込み ${month.forecast}`);
     if (month.overtime) noteParts.push(`残業 ${month.overtime}`);
+    if (month.overtimeSite) noteParts.push(`現場の残業 ${month.overtimeSite}`);
     const note = noteParts.join(' ／ ');
     const subtitle = `${DateUtils.formatDate(from, 'M/d')}〜${DateUtils.formatDate(last, 'M/d')}`;
     return { subtitle, metrics, note };
@@ -1586,7 +1659,9 @@ const MainProc = (function () {
     ];
     if (month.forecast) metrics.push({ label: '着地見込み', value: month.forecast });
     const subtitle = `${DateUtils.formatDate(now, 'yyyy年M月')}（${now.getDate()}日時点）`;
-    LineManager.replyFlex(replyToken, '着地見込み', FlexCards.summary({ title: '着地見込み', subtitle, metrics }));
+    // 残業は会社（丸め前）。現場（丸め後）の残業は注記に添える
+    const note = month.overtimeSite ? `現場の残業 ${month.overtimeSite}` : '';
+    LineManager.replyFlex(replyToken, '着地見込み', FlexCards.summary({ title: '着地見込み', subtitle, metrics, note }));
   };
 
   /**

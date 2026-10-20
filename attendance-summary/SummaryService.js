@@ -21,6 +21,27 @@ const SummaryService = (function () {
   const getSheet_ = (ss) => ss.getSheetByName(SheetLayout.SUMMARY_SHEET) || SheetLayout.setup(ss);
 
   /**
+   * 今のシートの見出しから、列の名前 → 列の位置（0始まり）を引けるようにします。
+   *
+   * 列を足したあと最初の更新では、シートはまだ前の並びのままです。
+   * 列番号で読むとずれた値を拾ってしまうので、見出しの名前で探します。
+   * 2段目に列名、年月・契約・日別は1段目に列名が入っています。
+   */
+  const columnNames_ = (sheet) => {
+    const cols = sheet.getMaxColumns();
+    const rows = Math.min(SheetLayout.HEADER_ROWS, sheet.getMaxRows());
+    if (cols < 1 || rows < 1) return [];
+    const head = sheet.getRange(1, 1, rows, cols).getValues();
+    return head[0].map((_, c) => String((head[rows - 1] && head[rows - 1][c]) || head[0][c] || '').trim());
+  };
+
+  /** シートの列の並びが今のレイアウトと同じかを返します（違えば初期化と全期間の読み直しが要る）。 */
+  const layoutMatches_ = (sheet) => {
+    const names = columnNames_(sheet);
+    return SheetLayout.HEADERS.every((h, i) => names[i] === h);
+  };
+
+  /**
    * サマリシートの既存行を読み出します。
    * 再取得しない月は、集計値・日別の値と背景色をそのまま書き戻すために持ちます。
    */
@@ -28,33 +49,44 @@ const SummaryService = (function () {
     const last = sheet.getLastRow();
     if (last < START) return [];
     const n = last - START + 1;
-    const values = sheet.getRange(START, 1, n, SheetLayout.TOTAL_COLS).getValues();
-    const bgs = sheet.getRange(START, COL.DAY_START, n, DAYS).getBackgrounds();
+    const names = columnNames_(sheet);
+    const values = sheet.getRange(START, 1, n, names.length).getValues();
+    const bgs = sheet.getRange(START, 1, n, names.length).getBackgrounds();
+
+    // 列の名前で位置を引く。見つからない列（前の並びに無かった列）は空として読む
+    const pos = {};
+    names.forEach((name, i) => { if (name && !(name in pos)) pos[name] = i; });
+    const at = (arr, col) => {
+      const i = pos[SheetLayout.HEADERS[col - 1]];
+      return i === undefined ? '' : arr[i];
+    };
+    const days = (arr) => Array.from({ length: DAYS }, (_, d) => at(arr, COL.DAY_START + d));
 
     const rows = [];
     values.forEach((v, i) => {
       // 表示は '2026/08' だが、キーとして扱うのは 'yyyyMM'（勤務表側と揃えて比較・並べ替えに使う）
-      const ym = String(v[COL.YM - 1] || '').replace(/[^0-9]/g, '').slice(0, 6);
+      const ym = String(at(v, COL.YM) || '').replace(/[^0-9]/g, '').slice(0, 6);
       if (ym.length !== 6) return;
       rows.push({
         ym,
         auto: {
-          workDays: v[COL.WORK_DAYS - 1],
-          paid: v[COL.PAID - 1],
-          absent: v[COL.ABSENT - 1],
-          daikyu: v[COL.DAIKYU - 1],
-          holidayWork: v[COL.HOLIDAY_WORK - 1],
-          workHours: v[COL.WORK_H - 1],
-          actualHours: v[COL.ACTUAL_H - 1],
+          workDays: at(v, COL.WORK_DAYS),
+          paid: at(v, COL.PAID),
+          absent: at(v, COL.ABSENT),
+          daikyu: at(v, COL.DAIKYU),
+          holidayWork: at(v, COL.HOLIDAY_WORK),
+          workHours: at(v, COL.WORK_H),
+          actualHours: at(v, COL.ACTUAL_H),
+          rawHours: at(v, COL.RAW_H),
         },
         meta: {
-          created: v[COL.FILE_CREATED - 1],
-          updated: v[COL.FILE_UPDATED - 1],
-          importedAt: v[COL.IMPORTED_AT - 1],
-          fileId: String(v[COL.FILE_ID - 1] || ''),
+          created: at(v, COL.FILE_CREATED),
+          updated: at(v, COL.FILE_UPDATED),
+          importedAt: at(v, COL.IMPORTED_AT),
+          fileId: String(at(v, COL.FILE_ID) || ''),
         },
-        dayValues: v.slice(COL.DAY_START - 1, COL.DAY_START - 1 + DAYS),
-        dayColors: bgs[i],
+        dayValues: days(v),
+        dayColors: days(bgs[i]).map((c) => c || '#ffffff'),
       });
     });
     return rows;
@@ -69,11 +101,14 @@ const SummaryService = (function () {
       absent: data.absent,
       daikyu: data.daikyu,
       holidayWork: data.holidayWork,
-      // 精算の元になる時間。見込みがあれば見込み、無ければ実績
+      // 精算の元になる時間。見込みがあれば見込み、無ければ実績（設定により有給・代休を含む）
       workHours: data.forecastHours !== null ? data.forecastHours
-        : ((data.actualHours === 0 && data.workDays === 0) ? '' : data.actualHours),
+        : ((data.settleHours === 0 && data.workDays === 0) ? '' : data.settleHours),
+      // 残業・日平均の元になる、実際に働いた時間（有給・代休を含まない）。
       // 実績がまだ無い未来月は0ではなく空にする（0時間と紛らわしいため）
       actualHours: (data.actualHours === 0 && data.workDays === 0) ? '' : data.actualHours,
+      // 会社の残業の元になる、丸める前の働いた時間
+      rawHours: (data.rawHours === 0 && data.workDays === 0) ? '' : data.rawHours,
     },
     meta: {
       created: file.created,
@@ -96,6 +131,7 @@ const SummaryService = (function () {
     arr[COL.HOLIDAY_WORK - 1] = row.auto.holidayWork;
     arr[COL.WORK_H - 1] = row.auto.workHours;
     arr[COL.ACTUAL_H - 1] = row.auto.actualHours;
+    arr[COL.RAW_H - 1] = row.auto.rawHours;
 
     const c = row.contract;
     arr[COL.CONTRACT - 1] = c ? c.name : '';
@@ -135,6 +171,7 @@ const SummaryService = (function () {
     const yearRows = [];     // 年計行の行番号
     const forecastRows = []; // 見込みで計算している月の行番号
     const groups = [];       // 折りたたむ月の範囲
+    const monthRows = [];    // [{ ym, row, yearOldest }] 36協定の列の数式を後で入れるため
     const nowYm = Timesheet.ym(new Date());
     const blankDays = new Array(DAYS).fill('#ffffff');
 
@@ -155,11 +192,13 @@ const SummaryService = (function () {
       for (let k = i; k < j; k++) {
         // 当月・未来月は稼働時間に見込みが入る。確定値と見分けられるよう控えておく
         if (rows[k].ym >= nowYm) forecastRows.push(START + values.length);
+        monthRows.push({ ym: rows[k].ym, row: START + values.length });
         values.push(monthCells_(rows[k], START + values.length));
         colors.push(rows[k].dayColors);
         links.push(SheetLayout.linkValues(rows[k].meta.fileId));
       }
       const to = START + values.length - 1;
+      monthRows.forEach((m) => { if (m.yearOldest === undefined) m.yearOldest = to; });
 
       const yv = SheetLayout.yearRowFor(year, from, to);
       Object.keys(yv).forEach((col) => { values[headerRow - START][Number(col) - 1] = yv[col]; });
@@ -167,6 +206,20 @@ const SummaryService = (function () {
 
       i = j;
     }
+
+    // 36協定の列は前の月（前の年のこともある）の行を参照するので、全ての行番号が決まってから入れる
+    const rowByYm = {};
+    monthRows.forEach((m) => { rowByYm[m.ym] = m.row; });
+    monthRows.forEach((m) => {
+      const prevRows = [];
+      for (let n = 1; n < 6; n++) {
+        const row = rowByYm[shiftYm_(m.ym, -n)];
+        if (!row) break; // 月が抜けたら、そこより前は連続した期間にならない
+        prevRows.push(row);
+      }
+      const f = SheetLayout.overtimeLimitFormulas(m.row, prevRows, m.yearOldest);
+      Object.keys(f).forEach((col) => { values[m.row - START][Number(col) - 1] = f[col]; });
+    });
 
     // 前回の書式を一度落とす。
     // 行の位置が変わると、古い塗り（年計行のグレーなど）が別の行に残って見えるため。
@@ -223,6 +276,12 @@ const SummaryService = (function () {
     };
   };
 
+  /** 'yyyyMM' を n ヶ月ずらします（負なら過去）。 */
+  const shiftYm_ = (ym, n) => {
+    const d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(4)) - 1 + n, 1);
+    return Timesheet.ym(d);
+  };
+
   /** 'yyyyMM' → '2026/08' */
   const label_ = (ym) => `${ym.slice(0, 4)}/${ym.slice(4)}`;
 
@@ -237,6 +296,12 @@ const SummaryService = (function () {
     const sheet = getSheet_(ss);
     const byYm = {};
     readExisting_(sheet).forEach((r) => { byYm[r.ym] = r; });
+    // 列の並びが変わった（アップデートで列が増えた）ときは、計算の定義も変わっている
+    // 可能性があるので、全ての月を読み直す。
+    // 勤務表の読み取りに効く設定（有給の扱い・丸め単位など）が前回から変わったときも同じ。
+    // 差分の更新は過去月を読み直さないので、そのままだと設定の変更が過去月に効かないため
+    const signature = Config.readSignature(cfg);
+    if (!layoutMatches_(sheet) || Props.getValue(PKeys.LAST_READ_CONFIG) !== signature) full = true;
 
     // フォルダの走査は、索引に無い月があるときだけ行う
     let index = FileIndex.load();
@@ -280,7 +345,7 @@ const SummaryService = (function () {
       if (meta) store.put(`meta:${ym}`, meta);
       toRead.push({ ym, id: entry.id });
     });
-    return { scanned, months: months.length, toRead, skipYms };
+    return { scanned, months: months.length, toRead, skipYms, signature };
   };
 
   /**
@@ -311,6 +376,12 @@ const SummaryService = (function () {
     const existing = readExisting_(sheet);
     const byYm = {};
     existing.forEach((r) => { byYm[r.ym] = r; });
+    // 列の並びが変わっていたら、書き込む前に見出し・列数・書式を今のレイアウトに作り直す。
+    // 既存の行は見出しの名前で読み終えているので、この後すべて今の並びで書き直される
+    if (!layoutMatches_(sheet)) {
+      sheet.clearConditionalFormatRules();
+      SheetLayout.setup(ss);
+    }
     const index = FileIndex.load();
     const skip = new Set(plan.skipYms);
     const result = { months: plan.months, read: 0, skipped: 0, kept: 0, noContract: 0, scanned: plan.scanned };
@@ -353,6 +424,8 @@ const SummaryService = (function () {
     });
 
     writeRows_(sheet, rows);
+    // 書き終えてから控える（途中で失敗したら、次の更新でもう一度全て読み直す）
+    if (plan.signature) Props.setValue(PKeys.LAST_READ_CONFIG, plan.signature);
     Logger.log('[SummaryService] 索引%sヶ月 / 走査%s / 読込%s / スキップ%s / 据置%s / 契約なし%s → %s行',
       result.months, plan.scanned ? 'あり' : 'なし', result.read, result.skipped, result.kept, result.noContract, rows.length);
     return result;

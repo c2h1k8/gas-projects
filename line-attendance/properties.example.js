@@ -23,6 +23,9 @@ function setScriptProps() {
     [PKeys.END_TIME_DEFAULT]: '18:30',
     [PKeys.ROUND_UNIT_CALC]: 1,   // 勤務表 AL9/AL10（開始の切上・終了の切捨）。1＝丸めなし
     [PKeys.ROUND_UNIT_TOTAL]: 30, // 勤務表 AL11（実働＝合計時刻の切捨）。1＝丸めなし
+    // 会社の丸め単位（分）。会社の残業（36協定）の計算に使う。未設定なら1＝丸めなし
+    [PKeys.ROUND_UNIT_COMPANY_CALC]: 1,  // 出社の切上・退社の切捨
+    [PKeys.ROUND_UNIT_COMPANY_TOTAL]: 1, // 実働の切捨
     // 有給休暇（入社日を設定すると自動付与。未設定なら有休管理を行わず休暇は欠勤で登録）
     [PKeys.PAID_LEAVE_JOIN_DATE]: 'YOUR_JOIN_DATE', // 'yyyy-MM-dd'
     [PKeys.PAID_LEAVE_EXPIRE_YEARS]: 2,

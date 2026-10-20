@@ -27,6 +27,12 @@ const FlexCards = (() => {
   const sep = (margin = 'md') => ({ type: 'separator', margin, color: LIGHT });
 
   // ラベル＋値の縦並び（KPI用）
+  /**
+   * 現場の残業（丸め後）の補足行。
+   * 横並びの指標は3つが収まりの上限なので、会社の残業（丸め前）の下に小さく添える。
+   */
+  const siteOvertime = (value) => text(`現場の残業 ${value}`, { size: 'xs', color: GRAY, align: 'center', margin: 'sm' });
+
   const metric = (label, value, color) => ({
     type: 'box', layout: 'vertical', spacing: 'none',
     contents: [
@@ -53,7 +59,8 @@ const FlexCards = (() => {
      * 打刻結果カード。
      * @param {{dateLabel, type, start, end, rest, kosu, summary, note}} p
      *   rest: 休憩時間。工数の内訳として添える。null可。
-     *   summary: { total, overtime, forecast } いずれも文字列でnull可（nullの項目は出さない）。summary自体null可。
+     *   summary: { total, overtime, overtimeSite, forecast } いずれも文字列でnull可（nullの項目は出さない）。summary自体null可。
+     *     overtime＝会社の残業（丸め前）、overtimeSite＝現場の残業（丸め後）。
      *   note: 末尾に添える補足（有休残など）。null可。
      */
     punch: ({ dateLabel, type, start, end, rest, kosu, summary, note }) => {
@@ -94,6 +101,7 @@ const FlexCards = (() => {
           body.push(sep());
           body.push({ type: 'box', layout: 'horizontal', margin: 'md', contents: m });
         }
+        if (summary.overtimeSite) body.push(siteOvertime(summary.overtimeSite));
       }
       if (note) {
         body.push(sep());
@@ -108,15 +116,17 @@ const FlexCards = (() => {
 
     /**
      * 稼働一覧カード。
-     * @param {{title, total, overtime, forecast, days, rows}} p
+     * @param {{title, total, overtime, overtimeSite, forecast, days, rows}} p
+     *   overtime＝会社の残業（丸め前）、overtimeSite＝現場の残業（丸め後）。
      *   days: 日数サマリー [{ label, count, type }]（type=勤怠区分。数字を種別色で表示）。省略可。
      *   rows: [{ dateLabel, type, time, kosu }]（稼働日のみ）
      */
-    list: ({ title, total, overtime, forecast, days, rows }) => {
+    list: ({ title, total, overtime, overtimeSite, forecast, days, rows }) => {
       const kpi = [metric('合計', total, DARK), metric('残業', overtime, BLUE)];
       if (forecast) kpi.push(metric('見込み', forecast, GRAY));
 
       const body = [{ type: 'box', layout: 'horizontal', contents: kpi }];
+      if (overtimeSite) body.push(siteOvertime(overtimeSite));
       if (days && days.length) {
         const spans = [];
         days.forEach((d, i) => {

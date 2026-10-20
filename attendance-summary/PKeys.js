@@ -12,4 +12,10 @@ const PKeys = {
    * シートを作り直しても、入力済みの値を打ち直さずに済むように残します。
    */
   CONFIG_BACKUP: 'CONFIG_BACKUP',
+
+  /**
+   * 前回の更新で勤務表の読み取りに使った設定（JSON）。
+   * 設定が変わっていたら、過去の月も含めて全て読み直すための控えです。
+   */
+  LAST_READ_CONFIG: 'LAST_READ_CONFIG',
 };
