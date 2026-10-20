@@ -15,6 +15,8 @@ const Config = (function () {
     FROM_YM: '集計開始年月',
     STD_HOURS: '所定労働時間(h/日)',
     INCLUDE_LEAVE: '有給・代休の扱い',
+    CO_ROUND_CALC: '会社の丸め単位 出社・退社(分)',
+    CO_ROUND_TOTAL: '会社の丸め単位 実働(分)',
     EXCLUDE_NAMES: '対象外のファイル名',
   };
 
@@ -58,6 +60,8 @@ const Config = (function () {
     [KEY.FROM_YM, '', '集計を始める年月 yyyyMM。空なら見つかった全ての月'],
     [KEY.STD_HOURS, 8, '1日あたりの所定労働時間。有給・代休を稼働に含める場合の1日分に使う'],
     [KEY.INCLUDE_LEAVE, LEAVE.OFF, `${LEAVE_LIST.join(' / ')}。「${LEAVE.ON}」にすると有給・代休の日を所定労働時間ぶんの稼働として数える`],
+    [KEY.CO_ROUND_CALC, 1, '会社の残業（36協定）を計算するときの、出社の切り上げ・退社の切り捨ての単位。1なら丸めない。現場の丸めは勤務表の設定に従う'],
+    [KEY.CO_ROUND_TOTAL, 1, '会社の残業を計算するときの、実働（退社 − 出社 − 休憩）の切り捨ての単位。1なら丸めない'],
     [KEY.EXCLUDE_NAMES, DEFAULT_EXCLUDE, '読み込まないファイル名。カンマ区切りで複数指定できる。このスプレッドシート自身は指定しなくても除外される'],
   ];
 
@@ -175,6 +179,10 @@ const Config = (function () {
       sheet.getRange(2, 1, last - 1, 2).getValues().forEach(([k, v]) => { map[alias_(k)] = v; });
     }
 
+    // アップデートで項目が増えたときは、シートに行を足しておく（入力済みの値は setup が引き継ぐ）。
+    // 足した項目の値はこの回は既定値で読む
+    if (TEMPLATE.some(([key]) => !(key in map))) setup(ss);
+
     const num = (key, def) => {
       const v = map[key];
       return (v === '' || v === null || v === undefined) ? def : Number(v);
@@ -187,6 +195,8 @@ const Config = (function () {
       fromYm: str(KEY.FROM_YM).replace(/[^0-9]/g, '').slice(0, 6),
       stdHours: num(KEY.STD_HOURS, 8),
       includeLeave: normLeave_(map[KEY.INCLUDE_LEAVE]) === LEAVE.ON,
+      coRoundCalc: Math.max(num(KEY.CO_ROUND_CALC, 1) || 1, 1),
+      coRoundTotal: Math.max(num(KEY.CO_ROUND_TOTAL, 1) || 1, 1),
       excludeNames: str(KEY.EXCLUDE_NAMES).split(',').map((s) => s.trim()).filter((s) => s),
     };
 
@@ -198,5 +208,12 @@ const Config = (function () {
     return cfg;
   };
 
-  return { KEY, LEAVE, LEAVE_LIST, setup, load };
+  /**
+   * 勤務表の読み取り結果に効く設定を、比べられる文字列にします。
+   * 集計開始年月は書き込むときに絞るだけで、読み直さなくても反映されるので含めません。
+   */
+  const readSignature = (cfg) => JSON.stringify([cfg.dirId, cfg.sheetName, cfg.stdHours, cfg.includeLeave,
+    cfg.coRoundCalc, cfg.coRoundTotal, cfg.excludeNames]);
+
+  return { KEY, LEAVE, LEAVE_LIST, setup, load, readSignature };
 })();

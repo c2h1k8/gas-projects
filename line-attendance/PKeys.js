@@ -24,6 +24,10 @@ const PKeys = {
   ROUND_UNIT_CALC: 'ROUND_UNIT_CALC',
   /** 実働（合計時刻）の切り捨て単位（分。勤務表のAL11。1＝丸めなし） */
   ROUND_UNIT_TOTAL: 'ROUND_UNIT_TOTAL',
+  /** 会社の開始・終了時刻の丸め単位（分。出社=切上/退社=切捨。会社の残業に使う。未設定は1＝丸めなし） */
+  ROUND_UNIT_COMPANY_CALC: 'ROUND_UNIT_COMPANY_CALC',
+  /** 会社の実働の切り捨て単位（分。会社の残業に使う。未設定は1＝丸めなし） */
+  ROUND_UNIT_COMPANY_TOTAL: 'ROUND_UNIT_COMPANY_TOTAL',
 
   /** 名字 */
   NAME_LAST: 'NAME_LAST',

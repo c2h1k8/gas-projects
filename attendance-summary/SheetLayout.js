@@ -34,34 +34,40 @@ const SheetLayout = (function () {
     HOLIDAY_WORK: 7,   // 休日出勤
     WORK_H: 8,         // 稼働時間（精算の元。過去月＝実績、当月＝着地見込み）
     DAY_AVG: 9,        // 日平均
-    OVERTIME: 10,      // 残業時間（稼働時間 − 稼働日数×所定労働時間）
-    ACTUAL_H: 11,      // 実績時間（当日まで。非表示。日平均の分母に使う）
+    OVERTIME: 10,      // 現場の残業時間（実績時間 − 稼働日数×所定労働時間）
+    ACTUAL_H: 11,      // 実績時間（出勤・休日出勤に働いた丸め後の時間。当日まで。非表示。現場の残業と日平均に使う）
+
+    // ここから会社の管理（丸め前の時間）。36協定の上限はこちらで判定する
+    RAW_H: 12,         // 実働時間（出勤・休日出勤に働いた丸め前の時間。当日まで）
+    CO_OT: 13,         // 会社の残業時間（実働時間 − 稼働日数×所定労働時間）
+    OT_AVG: 14,        // 2〜6ヶ月平均の残業（その月で終わる2〜6ヶ月の平均のうち最大）
+    OT_OVER45: 15,     // 45h超の回数（その年の1月からその月まで）
 
     // ここから契約シート由来。年月から該当契約を引いて自動で埋める
-    MONTHLY: 12,       // 月額単価
-    LOWER: 13,         // 下限時間
-    UPPER: 14,         // 上限時間
-    BASE_H: 15,        // 基準時間
-    ROUND_ADJ: 16,     // 端数処理（超過控除）… 超過控除単価と精算額に効く
-    UNIT_ADJ: 17,      // 丸め単位（超過控除）
-    RATE: 18,          // 還元率
-    ROUND_PAY: 19,     // 端数処理（支払）… 支払額に効く
-    UNIT_PAY: 20,      // 丸め単位（支払）
+    MONTHLY: 16,       // 月額単価
+    LOWER: 17,         // 下限時間
+    UPPER: 18,         // 上限時間
+    BASE_H: 19,        // 基準時間
+    ROUND_ADJ: 20,     // 端数処理（超過控除）… 超過控除単価と精算額に効く
+    UNIT_ADJ: 21,      // 丸め単位（超過控除）
+    RATE: 22,          // 還元率
+    ROUND_PAY: 23,     // 端数処理（支払）… 支払額に効く
+    UNIT_PAY: 24,      // 丸め単位（支払）
 
-    HOURLY: 21,        // 超過控除単価（月額単価÷基準時間）
-    DIFF_H: 22,        // 過不足時間
-    ADJUST: 23,        // 精算額
-    REVENUE: 24,       // 売上（月額単価＋精算額）
-    PAYMENT: 25,       // 支払額（売上×還元率）
+    HOURLY: 25,        // 超過控除単価（月額単価÷基準時間）
+    DIFF_H: 26,        // 過不足時間
+    ADJUST: 27,        // 精算額
+    REVENUE: 28,       // 売上（月額単価＋精算額）
+    PAYMENT: 29,       // 支払額（売上×還元率）
 
-    LINK_OPEN: 26,     // 勤務表を開くリンク
-    LINK_XLSX: 27,     // 勤務表をxlsxで落とすリンク
-    FILE_CREATED: 28,  // 勤務表 作成日
-    FILE_UPDATED: 29,  // 勤務表 最終更新
-    IMPORTED_AT: 30,   // 取込日時
-    FILE_ID: 31,       // 勤務表ファイルID（非表示・リンクと差分判定のキー）
+    LINK_OPEN: 30,     // 勤務表を開くリンク
+    LINK_XLSX: 31,     // 勤務表をxlsxで落とすリンク
+    FILE_CREATED: 32,  // 勤務表 作成日
+    FILE_UPDATED: 33,  // 勤務表 最終更新
+    IMPORTED_AT: 34,   // 取込日時
+    FILE_ID: 35,       // 勤務表ファイルID（非表示・リンクと差分判定のキー）
 
-    DAY_START: 32,     // 日別の先頭列（1日）
+    DAY_START: 36,     // 日別の先頭列（1日）
   };
 
   /** 日別を含めた総列数 */
@@ -87,6 +93,10 @@ const SheetLayout = (function () {
     [COL.DAY_AVG]: 62,
     [COL.OVERTIME]: 78,
     [COL.ACTUAL_H]: 74,
+    [COL.RAW_H]: 74,
+    [COL.CO_OT]: 78,
+    [COL.OT_AVG]: 84,
+    [COL.OT_OVER45]: 72,
     [COL.MONTHLY]: 88,
     [COL.LOWER]: 72,
     [COL.UPPER]: 72,
@@ -126,8 +136,17 @@ const SheetLayout = (function () {
 
   /** 所定労働時間を数式から参照するための名前定義（設定シートの値を指す） */
   const NAMED_STD_HOURS = 'STD_HOURS';
-  /** この残業時間（月）を超えた行を警告色にする。36協定の目安 */
+  /**
+   * 36協定の上限（会社の運用ルール）。
+   *   - 月の残業は45hまで。超えてよいのは繁忙期だけで、年6回まで、かつ90hまで
+   *   - 2〜6ヶ月の平均は80hまで
+   */
   const OVERTIME_ALERT = 45;
+  const OVERTIME_MAX = 90;
+  const OVERTIME_AVG_MAX = 80;
+  const OVER45_MAX_COUNT = 6;
+  /** 平均をとる月数の範囲（2〜6ヶ月） */
+  const AVG_SPANS = [2, 3, 4, 5, 6];
 
   /**
    * 見出し1段目に置くブロック。
@@ -137,7 +156,9 @@ const SheetLayout = (function () {
    * （日別は31列と幅が広いため、結合した見出しだと横スクロールで画面外へ出てしまう）。
    */
   const HEADER_GROUPS = () => [
-    { label: '勤務実績', from: COL.WORK_DAYS, to: COL.ACTUAL_H, accent: THEME.ACCENT_SUM },
+    // 現場は丸めた時間で精算する。会社は丸める前の時間で残業（36協定）を管理する
+    { label: '現場（丸め後）', from: COL.WORK_DAYS, to: COL.ACTUAL_H, accent: THEME.ACCENT_SUM },
+    { label: '会社（丸め前）', from: COL.RAW_H, to: COL.OT_OVER45, accent: THEME.ACCENT_COMPANY },
     // 超過控除単価は月額単価÷基準時間で決まる契約側の単価なので、精算結果ではなく契約条件に含める
     { label: '契約条件', from: COL.MONTHLY, to: COL.HOURLY, accent: THEME.ACCENT_CONTRACT },
     { label: '精算と支払', from: COL.DIFF_H, to: COL.PAYMENT, accent: THEME.ACCENT_MONEY },
@@ -148,7 +169,7 @@ const SheetLayout = (function () {
    * ブロックの先頭列。ここに縦罫を入れて区切りを示す。
    * 年月・契約（行の見出し）と勤務実績の間にも引く。
    */
-  const BLOCK_STARTS = () => [COL.WORK_DAYS, COL.MONTHLY, COL.DIFF_H, COL.LINK_OPEN, COL.DAY_START];
+  const BLOCK_STARTS = () => [COL.WORK_DAYS, COL.RAW_H, COL.MONTHLY, COL.DIFF_H, COL.LINK_OPEN, COL.DAY_START];
 
   /** スプレッドシートのURLの共通部分（リンク列の組み立てに使う） */
   const SS_URL = 'https://docs.google.com/spreadsheets/d/';
@@ -178,6 +199,7 @@ const SheetLayout = (function () {
 
     /** ブロックを示すアクセント罫。塗り面積を小さくして識別だけを残す */
     ACCENT_SUM: '#94a3b8',
+    ACCENT_COMPANY: '#fda4af',
     ACCENT_CONTRACT: '#a5b4fc',
     ACCENT_MONEY: '#5eead4',
     ACCENT_META: '#64748b',
@@ -224,6 +246,9 @@ const SheetLayout = (function () {
     ALERT: '#ffe4e6',
     /** 同上の文字色 */
     ALERT_TEXT: '#be123c',
+    /** 上限を超えた月（月90h超・2〜6ヶ月平均80h超・45h超が年7回目以降）。目安超えより強く塗る */
+    LIMIT: '#be123c',
+    LIMIT_TEXT: '#ffffff',
 
     /** 年計行。データ行とわずかに差が出る程度の淡い地色にとどめる */
     YEAR_BG: '#f1f5f9',
@@ -259,8 +284,12 @@ const SheetLayout = (function () {
     h[COL.HOLIDAY_WORK] = '休出';
     h[COL.WORK_H] = '稼働時間';
     h[COL.DAY_AVG] = '日平均';
-    h[COL.OVERTIME] = '残業時間';
+    h[COL.OVERTIME] = '残業(現場)';
     h[COL.ACTUAL_H] = '実績時間';
+    h[COL.RAW_H] = '実働時間';
+    h[COL.CO_OT] = '残業(会社)';
+    h[COL.OT_AVG] = '2〜6月平均';
+    h[COL.OT_OVER45] = '45h超回数';
     h[COL.MONTHLY] = '月額単価';
     h[COL.LOWER] = '下限時間';
     h[COL.UPPER] = '上限時間';
@@ -358,10 +387,18 @@ const SheetLayout = (function () {
     // 稼働日数は今日までの出勤日数なので、そのまま引くと分子だけ先の期間を含んでしまい
     // 残業が大きく出てしまうため。実績どうしで引けば、当月は「今日までの残業」になる。
     //
-    // 有給・欠勤・代休の日は所定にも実働にも数えず、休日出勤の時間は全額が残業側に乗る。
+    // 有給・欠勤・代休の日は所定にも実働にも数えず、休日出勤の時間は全額が残業側に乗る
+    // （実績時間には有給・代休の時間を入れていない。稼働時間の方は精算のため設定次第で入る）。
+    // 休日出勤を全額入れるのは、4週4休を割り込まない休日出勤は法定外休日の労働で、
+    // 36協定の時間外労働（月45h）に数えるため。
     // LINE勤怠Bot側の残業計算と同じ定義にして、両者の数字が食い違わないようにしている。
     f[COL.OVERTIME] = `=IF(OR($${L.ACTUAL_H}${r}="",N($${L.WORK_DAYS}${r})=0),"",`
       + `ROUND($${L.ACTUAL_H}${r}-$${L.WORK_DAYS}${r}*${NAMED_STD_HOURS},2))`;
+
+    // 会社の残業時間＝実働時間（丸め前）−（稼働日数 × 所定労働時間）。数え方は現場の残業と同じで、
+    // 丸める前の時間を使うところだけが違う。36協定の上限はこちらで判定する
+    f[COL.CO_OT] = `=IF(OR($${L.RAW_H}${r}="",N($${L.WORK_DAYS}${r})=0),"",`
+      + `ROUND($${L.RAW_H}${r}-$${L.WORK_DAYS}${r}*${NAMED_STD_HOURS},2))`;
 
     // 時間単価＝月額単価 ÷ 基準時間（例: 750,000 / 160h → 4,687.5 → 切り捨て → 4,687）
     f[COL.HOURLY] = `=IF(OR($${L.MONTHLY}${r}="",N($${L.BASE_H}${r})=0),"",${rounded(`$${L.MONTHLY}${r}/$${L.BASE_H}${r}`, r, COL.ROUND_ADJ, COL.UNIT_ADJ)})`;
@@ -381,6 +418,34 @@ const SheetLayout = (function () {
     // 支払額＝売上×還元率（手取りとして支払われるはずの額）
     f[COL.PAYMENT] = `=IF(OR($${L.REVENUE}${r}="",$${L.RATE}${r}=""),"",${rounded(`$${L.REVENUE}${r}*$${L.RATE}${r}`, r, COL.ROUND_PAY, COL.UNIT_PAY)})`;
 
+    return f;
+  };
+
+  /**
+   * 36協定の上限を確かめる列の数式を組み立てます。
+   *
+   * どちらも他の月の行を参照するため、行の並び（年計行を挟む・月が抜ける）が決まってから作ります。
+   * 参照先をセルで明示しておけば、どの月から計算したかをシート上で追えます。
+   *
+   * @param r この月の行番号
+   * @param prevRows 前月から順に、連続して並ぶ過去の月の行番号（最大5つ。月が抜けたところで打ち切る）
+   * @param yearOldestRow この年で一番古い月の行番号（新しい月が上に並ぶので、ここまでがその年）
+   * @return { 列番号: 数式 }
+   */
+  const overtimeLimitFormulas = (r, prevRows, yearOldestRow) => {
+    const ot = (row) => `N($${L.CO_OT}${row})`;
+    const f = {};
+
+    // 2〜6ヶ月平均＝この月で終わる2〜6ヶ月の平均のうち最大。どの期間でも80h以内が上限なので最大を見る。
+    // 残業が空の月（稼働が無い月）は0として平均に入れる
+    const spans = AVG_SPANS.filter((n) => n - 1 <= prevRows.length);
+    f[COL.OT_AVG] = spans.length
+      ? `=IF($${L.CO_OT}${r}="","",ROUND(MAX(${spans.map((n) =>
+        `AVERAGE(${[r].concat(prevRows.slice(0, n - 1)).map(ot).join(',')})`).join(',')}),2))`
+      : '';
+
+    // 45h超の回数＝その年の1月からこの月までに45hを超えた月の数（年6回まで）
+    f[COL.OT_OVER45] = `=COUNTIF($${L.CO_OT}${r}:$${L.CO_OT}${yearOldestRow},">${OVERTIME_ALERT}")`;
     return f;
   };
 
@@ -426,8 +491,9 @@ const SheetLayout = (function () {
     const v = {};
     v[COL.YM] = `${year}年`;
     [COL.WORK_DAYS, COL.PAID, COL.ABSENT, COL.DAIKYU, COL.HOLIDAY_WORK,
-      COL.WORK_H, COL.OVERTIME, COL.ACTUAL_H].forEach((c) => { v[c] = `=${sum(c)}`; });
+      COL.WORK_H, COL.OVERTIME, COL.ACTUAL_H, COL.RAW_H, COL.CO_OT].forEach((c) => { v[c] = `=${sum(c)}`; });
     v[COL.DAY_AVG] = `=IF(${sum(COL.WORK_DAYS)}=0,"",ROUND(${sum(COL.ACTUAL_H)}/${sum(COL.WORK_DAYS)},2))`;
+    v[COL.OT_OVER45] = `=COUNTIF($${L.CO_OT}${from}:$${L.CO_OT}${to},">${OVERTIME_ALERT}")`;
     [COL.ADJUST, COL.REVENUE, COL.PAYMENT].forEach((c) => { v[c] = `=${sum(c)}`; });
     return v;
   };
@@ -494,7 +560,8 @@ const SheetLayout = (function () {
     at(COL.YM).setNumberFormat('@');
     at(COL.CONTRACT).setNumberFormat('@');
     at(COL.WORK_DAYS, 5).setNumberFormat('0');
-    at(COL.WORK_H, COL.ACTUAL_H - COL.WORK_H + 1).setNumberFormat('0.00');
+    at(COL.WORK_H, COL.OT_AVG - COL.WORK_H + 1).setNumberFormat('0.00');
+    at(COL.OT_OVER45).setNumberFormat('0');
     at(COL.MONTHLY).setNumberFormat('#,##0');
     at(COL.LOWER, 3).setNumberFormat('0.00');
     at(COL.ROUND_ADJ).setNumberFormat('@');
@@ -564,37 +631,42 @@ const SheetLayout = (function () {
   ];
 
   /**
-   * 残業が目安を超えた行を警告色にします（健康管理・36協定）。
+   * 会社の残業が目安・上限を超えたセルに色を付けます（健康管理・36協定）。
+   * 36協定は会社が丸め前の時間で管理するので、現場の残業には付けません。
+   *
+   *   - 残業(会社): 45h超で警告色、90h超で上限超えの色
+   *   - 2〜6月平均: 80h超で上限超えの色
+   *   - 45h超回数: 7回目以降で上限超えの色
    *
    * 月の行は背景と文字色の両方を変えますが、年計行は文字色だけにします。
    * 年計行は見出しとして地色を敷いているので、1セルだけ背景が変わると浮いて見えるためです。
+   * 条件付き書式は先に並べたルールが勝つので、上限超えを目安超えより前に置きます。
    *
    * @param monthRanges 月の行の範囲 [{ from, count }]
    * @param yearRows 年計行の行番号
    */
   const applyOvertimeAlert = (sheet, monthRanges, yearRows) => {
-    // この列に対する既存ルールを外してから入れ直す
+    // 現場の残業は以前の警告の残りを外すために含める
+    const cols = [COL.OVERTIME, COL.CO_OT, COL.OT_AVG, COL.OT_OVER45];
+    // これらの列に対する既存ルールを外してから入れ直す
     const kept = sheet.getConditionalFormatRules()
-      .filter((rule) => !rule.getRanges().every((r) => r.getColumn() === COL.OVERTIME));
+      .filter((rule) => !rule.getRanges().every((r) => cols.indexOf(r.getColumn()) >= 0));
 
-    const months = (monthRanges || []).map((g) => sheet.getRange(g.from, COL.OVERTIME, g.count, 1));
-    if (months.length) {
-      kept.push(SpreadsheetApp.newConditionalFormatRule()
-        .whenNumberGreaterThan(OVERTIME_ALERT)
-        .setBackground(THEME.ALERT)
-        .setFontColor(THEME.ALERT_TEXT)
-        .setRanges(months)
-        .build());
-    }
+    const months = (col) => (monthRanges || []).map((g) => sheet.getRange(g.from, col, g.count, 1));
+    const years = (col) => (yearRows || []).map((r) => sheet.getRange(r, col));
+    const rule = (ranges, threshold, bg, text) => {
+      if (!ranges.length) return;
+      const b = SpreadsheetApp.newConditionalFormatRule().whenNumberGreaterThan(threshold).setFontColor(text);
+      if (bg) b.setBackground(bg);
+      kept.push(b.setRanges(ranges).build());
+    };
 
-    const years = (yearRows || []).map((r) => sheet.getRange(r, COL.OVERTIME));
-    if (years.length) {
-      kept.push(SpreadsheetApp.newConditionalFormatRule()
-        .whenNumberGreaterThan(OVERTIME_ALERT)
-        .setFontColor(THEME.ALERT_TEXT)
-        .setRanges(years)
-        .build());
-    }
+    rule(months(COL.CO_OT), OVERTIME_MAX, THEME.LIMIT, THEME.LIMIT_TEXT);
+    rule(months(COL.CO_OT), OVERTIME_ALERT, THEME.ALERT, THEME.ALERT_TEXT);
+    rule(years(COL.CO_OT), OVERTIME_ALERT, null, THEME.ALERT_TEXT);
+    rule(months(COL.OT_AVG), OVERTIME_AVG_MAX, THEME.LIMIT, THEME.LIMIT_TEXT);
+    rule(months(COL.OT_OVER45), OVER45_MAX_COUNT, THEME.LIMIT, THEME.LIMIT_TEXT);
+    rule(years(COL.OT_OVER45), OVER45_MAX_COUNT, null, THEME.ALERT_TEXT);
 
     sheet.setConditionalFormatRules(kept);
   };
@@ -736,7 +808,11 @@ const SheetLayout = (function () {
     note(COL.REVENUE, '月額単価＋精算額。発注元に請求される額。\n進行中の月は着地見込みの額。');
     note(COL.PAYMENT, '売上×還元率。支払われるはずの額。\n進行中の月は着地見込みの額。');
     note(COL.WORK_H, '精算の元になる時間。過去月は実績、進行中の月は着地見込み（斜体で表示）。');
-    note(COL.OVERTIME, '実績時間 −（稼働日数 × 所定労働時間）。\n進行中の月は「今日までの残業」で、着地見込みではありません。');
+    note(COL.OVERTIME, '実績時間（丸め後）−（稼働日数 × 所定労働時間）。現場の時間での残業。\n有給・代休の時間は含めず、休日出勤の時間は全て含める。\n進行中の月は「今日までの残業」で、着地見込みではありません。');
+    note(COL.RAW_H, '出勤・休日出勤の日に働いた時間を、丸める前の打刻（退社 − 出社 − 休憩）で合計したもの。\n会社はこの時間で勤怠を管理する。');
+    note(COL.CO_OT, `実働時間（丸め前）−（稼働日数 × 所定労働時間）。会社の時間での残業で、36協定の判定に使う。\n有給・代休の時間は含めず、休日出勤の時間は全て含める。\n${OVERTIME_ALERT}h超で警告色、${OVERTIME_MAX}h超で上限超えの色。`);
+    note(COL.OT_AVG, `この月で終わる2〜6ヶ月の残業の平均のうち、最も大きいもの。${OVERTIME_AVG_MAX}hを超えると上限超えの色。\n前の月が抜けているところまでで計算する。`);
+    note(COL.OT_OVER45, `その年の1月からこの月までに、残業が${OVERTIME_ALERT}hを超えた月の数。年${OVER45_MAX_COUNT}回までで、超えると上限超えの色。`);
     note(COL.DIFF_H, '精算幅からのはみ出し。稼働時間を元に計算する。');
     note(COL.LINK_OPEN, 'その月の勤務表を開きます。');
     note(COL.LINK_XLSX, 'ダウンロード。その月の勤務表をExcel（xlsx）で保存します。開かずにそのまま落ちてきます。');
@@ -806,7 +882,7 @@ const SheetLayout = (function () {
     SUMMARY_SHEET, CONFIG_SHEET, DATA_START_ROW, MAX_DAYS, TOTAL_COLS,
     COL, CONTRACT_COLS, WIDTH, DAY_WIDTH, BG, THEME, HEADERS, PROTECT_SUMMARY, PROTECT_HEADER,
     DAY_FONT_SIZE, ROW_HEIGHT, HIDDEN_COLS, NAMED_STD_HOURS, OVERTIME_ALERT, HEADER_ROWS,
-    colLetter, roundedByCell, formulasFor, linkValues, LINK_LABEL, yearRowFor, styleYearRows, styleForecastCells, groupRows,
+    colLetter, roundedByCell, formulasFor, overtimeLimitFormulas, linkValues, LINK_LABEL, yearRowFor, styleYearRows, styleForecastCells, groupRows,
     applyFormats, applyRoundingColors, applyOvertimeAlert, choiceColorRules, roundingChoices,
     protectRanges, trim, setup,
   };
