@@ -26,6 +26,19 @@ const FlexCards = (() => {
   const text = (t, opt = {}) => Object.assign({ type: 'text', text: String(t) }, opt);
   const sep = (margin = 'md') => ({ type: 'separator', margin, color: LIGHT });
 
+  /**
+   * 日付ピッカーを開くボタン（カードの末尾に添える後続操作用）。
+   * @param picker { label, data, initial, min, max }（dataはポストバックに載せるオブジェクト）
+   */
+  const datePickerButton = (picker) => ({
+    type: 'button', height: 'sm', style: 'secondary', margin: 'md',
+    action: {
+      type: 'datetimepicker', label: picker.label, mode: 'date',
+      data: JSON.stringify(picker.data),
+      initial: picker.initial, min: picker.min, max: picker.max,
+    },
+  });
+
   // ラベル＋値の縦並び（KPI用）
   /**
    * 現場の残業（丸め後）の補足行。
@@ -62,8 +75,9 @@ const FlexCards = (() => {
      *   summary: { total, overtime, overtimeSite, forecast } いずれも文字列でnull可（nullの項目は出さない）。summary自体null可。
      *     overtime＝会社の残業（丸め前）、overtimeSite＝現場の残業（丸め後）。
      *   note: 末尾に添える補足（有休残など）。null可。
+     *   picker: 末尾に添える日付ピッカーボタン（datePickerButtonの引数）。null可。
      */
-    punch: ({ dateLabel, type, start, end, rest, kosu, summary, note }) => {
+    punch: ({ dateLabel, type, start, end, rest, kosu, summary, note, picker }) => {
       const c = colorOf(type);
       const body = [];
 
@@ -107,6 +121,7 @@ const FlexCards = (() => {
         body.push(sep());
         body.push(text(note, { size: 'xs', color: GRAY, align: 'center', wrap: true, margin: 'md' }));
       }
+      if (picker) body.push(datePickerButton(picker));
 
       return shell(c, [
         text(type, { color: '#FFFFFF', weight: 'bold', size: 'lg', flex: 0 }),
@@ -257,13 +272,15 @@ const FlexCards = (() => {
 
     /**
      * 結果カード（勤務表提出など）。
-     * @param {{status, title, subtitle}} p  status: 'ok' | 'ng' | 'info'
+     * @param {{status, title, subtitle, picker}} p  status: 'ok' | 'ng' | 'info'
+     *   picker: 末尾に添える日付ピッカーボタン（datePickerButtonの引数）。null可。
      */
-    result: ({ status, title, subtitle }) => {
+    result: ({ status, title, subtitle, picker }) => {
       const map = { ok: ['#1DB446', '✓'], ng: ['#EB6978', '✕'], info: ['#8A8F9A', 'ℹ'] };
       const [color, icon] = map[status] || map.info;
       const body = [text(`${icon}  ${title}`, { weight: 'bold', size: 'md', color })];
       if (subtitle) body.push(text(subtitle, { size: 'sm', color: GRAY, margin: 'sm', wrap: true }));
+      if (picker) body.push(datePickerButton(picker));
       return {
         type: 'bubble',
         body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'lg', contents: body },

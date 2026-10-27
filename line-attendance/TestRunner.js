@@ -279,6 +279,8 @@ function test_all() {
     ['PB ヘルプ',              () => _runPostback_({ action: 'help' })],
     ['PB カレンダー出勤',       () => _runPostback_({ action: 'calendar', type: '出勤' }, { date: '2026-07-22' })],
     ['PB カレンダー休暇',       () => _runPostback_({ action: 'leave-calendar' }, { date: '2026-07-22' })],
+    ['PB カレンダー休暇_休日',  () => _runPostback_({ action: 'leave-calendar' }, { date: '2026-07-25' })],
+    ['PB 続けて休む',           () => _runPostback_({ action: 'leave-range', from: '2026-07-22' }, { date: '2026-07-28' })],
     ['PB 未登録一覧',           () => _runPostback_({ action: 'unregistered' })],
     ['PB 未登録_退社入力',      () => _runPostback_({ action: 'fill-punch', date: '2026-07-22', field: 'end' }, { time: '19:30' })],
     ['PB 今週の状況',           () => _runPostback_({ action: 'weekly' })],

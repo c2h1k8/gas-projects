@@ -180,9 +180,10 @@ const MainProc = (function () {
   /**
    * 勤務表が未作成の月の休暇を予約として保存します。
    * クリアは予約の取り消しとして扱う。
-   * @return 常にnull（シートには未反映のため打刻としては未確定）
+   * @param opts { reply: 返信するか, picker: 結果カードに添える日付ピッカー }
+   * @return 返信しない場合は { reserved: true }、それ以外はnull（シートには未反映のため打刻としては未確定）
    */
-  const reserveLeave_ = (replyToken, date, type) => {
+  const reserveLeave_ = (replyToken, date, type, { reply = true, picker = null } = {}) => {
     const key = DateUtils.formatDate(date, 'yyyy-MM-dd');
     const dateLabel = DateUtils.formatDate(date, 'M/d(aaa)');
     const reservations = getReservations();
@@ -207,15 +208,17 @@ const MainProc = (function () {
     pruneOldEntries(reservations);
     if (!_testMode) setReservations(reservations);
     // 予約の時点で有休を引き当てる（勤務表への反映時に二重に数えないよう日付で管理）
-    const paidNote = buildPaidLeaveNote_(type, date, recordPaidLeave_(type, date));
+    const ledger = recordPaidLeave_(type, date);
+    if (!reply) return { reserved: true };
     LineManager.replyFlex(replyToken, '予約しました', FlexCards.result({
       status: 'ok',
       title: `${type} を予約しました`,
       subtitle: [
         dateLabel,
         `${DateUtils.formatDate(date, 'yyyy年M月')}の勤務表を作成したときに反映されます`,
-        paidNote,
+        buildPaidLeaveNote_(type, date, ledger),
       ].filter(Boolean).join('\n'),
+      picker,
     }));
     return null;
   };
@@ -544,11 +547,105 @@ const MainProc = (function () {
   const executeRegistLeave = (replyToken, date) => {
     // 区分を決める前に、登録できない日はここで弾く
     if (replySubmittedLock_(replyToken, date)) return;
+    // 非営業日はもともと休みなので、休暇にすると有休を無駄に消化してしまう
+    if (!DateUtils.isBizDate(date)) {
+      LineManager.replyFlex(replyToken, '休日', FlexCards.result({
+        status: 'info',
+        title: '休日のため休暇の登録は不要です',
+        subtitle: DateUtils.formatDate(date, 'M/d(aaa)'),
+      }));
+      return;
+    }
+    updateTime(replyToken, { date, type: leaveTypeFor_(date), start: '-', end: '-' },
+      { picker: leaveRangePicker_(date) });
+  };
+
+  /**
+   * 休暇の区分を決めます。有給が残っていれば有給休暇、残っていなければ欠勤。
+   * 既に有給として引き当て済みの日は、押し直しても有給のまま。
+   * @param date 対象日
+   */
+  const leaveTypeFor_ = (date) => {
     const ledger = loadPaidLeaveLedger_(date);
     const key = ymdKey_(date);
-    // 既に有給として引き当て済みの日は、押し直しても有給のまま
     const canPaid = !!ledger && (!!ledger.used[key] || paidLeaveRemain_(ledger, key) > 0);
-    updateTime(replyToken, { date, type: canPaid ? TYPE.HOLIDAY : TYPE.REST, start: '-', end: '-' });
+    return canPaid ? TYPE.HOLIDAY : TYPE.REST;
+  };
+
+  // 続けて休む日を選べる最大日数。1日ずつ勤務表へ書くため、返信が間に合う範囲に抑える
+  const LEAVE_RANGE_MAX_DAYS = 14;
+
+  /**
+   * 休暇の結果カードに添える「〜まで続けて休む」日付ピッカーを組み立てます。
+   * @param date 登録した休暇の日（ここを起点に翌日以降を選ばせる）
+   */
+  const leaveRangePicker_ = (date) => {
+    const next = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+    const max = new Date(date.getFullYear(), date.getMonth(), date.getDate() + LEAVE_RANGE_MAX_DAYS);
+    return {
+      label: '〜まで続けて休む',
+      data: { action: 'leave-range', from: ymdKey_(date) },
+      initial: ymdKey_(next),
+      min: ymdKey_(next),
+      max: ymdKey_(max),
+    };
+  };
+
+  /**
+   * 起点の翌日から指定日までを休暇として登録します（起点の日は登録済みの前提）。
+   * 非営業日は飛ばし、区分は日ごとに有休の残から判定する（途中で残が尽きればそこから欠勤）。
+   * 返信は1回しかできないため、1日ごとのカードは出さずにまとめて1枚で返す。
+   * @param replyToken リプライトークン
+   * @param fromStr 起点（'yyyy-MM-dd'。この日は含まない）
+   * @param toStr 終点（'yyyy-MM-dd'。この日を含む）
+   */
+  const executeRegistLeaveRange = (replyToken, fromStr, toStr) => {
+    const from = Utilities.parseDate(fromStr, 'JST', 'yyyy-MM-dd');
+    const to = Utilities.parseDate(toStr, 'JST', 'yyyy-MM-dd');
+    const label = (d) => DateUtils.formatDate(d, 'M/d(aaa)');
+    const byType = new Map(); // 区分 → 登録した日の表示ラベル
+    let reserved = 0;
+    let skipped = 0;
+    const failed = [];
+    const notes = [];
+    let last = null; // 有休残の表示に使う最後に登録した日
+    const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 1);
+    for (; d <= to; d.setDate(d.getDate() + 1)) {
+      const date = new Date(d);
+      if (!DateUtils.isBizDate(date)) {
+        skipped++;
+        continue;
+      }
+      // 提出済み月は1日ずつロックのカードを返せないため、登録できなかった日として扱う
+      if (isSubmittedMonth(date)) {
+        failed.push(label(date));
+        continue;
+      }
+      const type = leaveTypeFor_(date);
+      const updated = updateTime(replyToken, { date, type, start: '-', end: '-' }, { reply: false });
+      if (!updated) {
+        failed.push(label(date));
+        continue;
+      }
+      if (updated.reserved) reserved++;
+      if (updated.exportNote) notes.push(`${label(date)} ${updated.exportNote}`);
+      if (!byType.has(type)) byType.set(type, []);
+      byType.get(type).push(DateUtils.formatDate(date, 'M/d'));
+      last = { date, type };
+    }
+
+    const lines = [...byType].map(([type, days]) => `${type} ${days.length}日（${days.join(', ')}）`);
+    if (reserved) lines.push(`うち${reserved}日は勤務表を作成したときに反映されます`);
+    if (skipped) lines.push(`休日 ${skipped}日は除きました`);
+    if (failed.length) lines.push(`登録できなかった日: ${failed.join(', ')}`);
+    if (last) lines.push(buildPaidLeaveNote_(last.type, last.date, loadPaidLeaveLedger_(last.date)));
+    lines.push(...notes);
+    const first = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 1);
+    LineManager.replyFlex(replyToken, '休暇を登録しました', FlexCards.result({
+      status: byType.size ? 'ok' : 'info',
+      title: byType.size ? `${label(first)}〜${label(to)} の休暇を登録しました` : '登録する日はありませんでした',
+      subtitle: lines.filter(Boolean).join('\n'),
+    }));
   };
 
   /**
@@ -1341,10 +1438,13 @@ const MainProc = (function () {
    * @param end 退社時間
    * @param rest 休憩時間（'-'なら現状維持。'00:00'で休憩なし）
    * @param reply 打刻カードを返信するか（呼び出し側で別のカードを返す場合はfalse）
-   * @return { kosu, punchCard } 更新成功（kosuは退社確定時のみ／punchCardは{ altText, contents }）
-   *         ／中断・予約として受け付けた場合はnull
+   * @param picker 結果カードに添える日付ピッカー（FlexCardsのpicker。null可）
+   * @return { kosu, punchCard, exportNote } 更新成功（kosuは退社確定時のみ／punchCardは{ altText, contents }
+   *         ／exportNoteは書き出し失敗時の文言）
+   *         ／返信しない場合に予約として受け付けたら { reserved: true }
+   *         ／中断・返信して予約として受け付けた場合はnull
    */
-  const updateTime = (replyToken, {date, type, start, end, rest = '-' }, { reply = true } = {}) => {
+  const updateTime = (replyToken, {date, type, start, end, rest = '-' }, { reply = true, picker = null } = {}) => {
     // 提出済み月は編集不可（全ての登録経路がここを通る）
     if (replySubmittedLock_(replyToken, date)) return null;
     // LINEからの開始登録有無（シート反映前に判定）
@@ -1353,8 +1453,8 @@ const MainProc = (function () {
     const sheet = getMainSheet(date);
     if (!sheet) {
       // 未来の休暇は勤務表が無くても予約として受け付ける（勤務表の作成時に反映）
-      if (canReserveLeave_(date, type)) return reserveLeave_(replyToken, date, type);
-      postErrMsgFileNotFound(replyToken, date);
+      if (canReserveLeave_(date, type)) return reserveLeave_(replyToken, date, type, { reply, picker });
+      if (reply) postErrMsgFileNotFound(replyToken, date);
       return null;
     }
     switch (type) {
@@ -1439,13 +1539,14 @@ const MainProc = (function () {
         summary: shouldUpdEnd ? getMonthSummaryData(date) : null,
         // 有給・欠勤は登録後の有休残を添える。書き出しに失敗したらそれも添える。
         note: [buildPaidLeaveNote_(type, date, ledger), exportNote].filter((v) => v).join('\n') || null,
+        picker,
       }),
     };
     if (reply) {
       LineManager.replyFlex(replyToken, punchCard.altText, punchCard.contents);
     }
 
-    return { kosu, punchCard };
+    return { kosu, punchCard, exportNote };
   }
 
   /**
@@ -2131,6 +2232,12 @@ const MainProc = (function () {
           // カレンダーで日付を選んだ休暇（区分は自動判定）
           if (receivePostback.params && receivePostback.params.date) {
             executeRegistLeave(replyToken, Utilities.parseDate(receivePostback.params.date, 'JST', 'yyyy-MM-dd'));
+          }
+          break;
+        case 'leave-range':
+          // 休暇の結果カードの「〜まで続けて休む」で終了日を選んだ
+          if (receivePostback.params && receivePostback.params.date) {
+            executeRegistLeaveRange(replyToken, data.from, receivePostback.params.date);
           }
           break;
         case 'calendar':
