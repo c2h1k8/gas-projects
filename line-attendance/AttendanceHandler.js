@@ -603,48 +603,40 @@ const MainProc = (function () {
     const from = Utilities.parseDate(fromStr, 'JST', 'yyyy-MM-dd');
     const to = Utilities.parseDate(toStr, 'JST', 'yyyy-MM-dd');
     const label = (d) => DateUtils.formatDate(d, 'M/d(aaa)');
-    const byType = new Map(); // 区分 → 登録した日の表示ラベル
-    let reserved = 0;
-    let skipped = 0;
-    const failed = [];
+    const days = []; // 期間の日ごとの結果（カードの一覧に使う）
     const notes = [];
     let last = null; // 有休残の表示に使う最後に登録した日
     const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 1);
     for (; d <= to; d.setDate(d.getDate() + 1)) {
       const date = new Date(d);
       if (!DateUtils.isBizDate(date)) {
-        skipped++;
+        days.push({ label: label(date), status: 'holiday' });
         continue;
       }
       // 提出済み月は1日ずつロックのカードを返せないため、登録できなかった日として扱う
       if (isSubmittedMonth(date)) {
-        failed.push(label(date));
+        days.push({ label: label(date), status: 'failed' });
         continue;
       }
       const type = leaveTypeFor_(date);
       const updated = updateTime(replyToken, { date, type, start: '-', end: '-' }, { reply: false });
       if (!updated) {
-        failed.push(label(date));
+        days.push({ label: label(date), status: 'failed' });
         continue;
       }
-      if (updated.reserved) reserved++;
+      days.push({ label: label(date), type, status: updated.reserved ? 'reserved' : 'ok' });
       if (updated.exportNote) notes.push(`${label(date)} ${updated.exportNote}`);
-      if (!byType.has(type)) byType.set(type, []);
-      byType.get(type).push(DateUtils.formatDate(date, 'M/d'));
       last = { date, type };
     }
 
-    const lines = [...byType].map(([type, days]) => `${type} ${days.length}日（${days.join(', ')}）`);
-    if (reserved) lines.push(`うち${reserved}日は勤務表を作成したときに反映されます`);
-    if (skipped) lines.push(`休日 ${skipped}日は除きました`);
-    if (failed.length) lines.push(`登録できなかった日: ${failed.join(', ')}`);
-    if (last) lines.push(buildPaidLeaveNote_(last.type, last.date, loadPaidLeaveLedger_(last.date)));
-    lines.push(...notes);
+    if (last) notes.unshift(buildPaidLeaveNote_(last.type, last.date, loadPaidLeaveLedger_(last.date)));
+    if (days.some((e) => e.status === 'reserved')) notes.push('（予約）の日は勤務表を作成したときに反映されます');
     const first = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 1);
-    LineManager.replyFlex(replyToken, '休暇を登録しました', FlexCards.result({
-      status: byType.size ? 'ok' : 'info',
-      title: byType.size ? `${label(first)}〜${label(to)} の休暇を登録しました` : '登録する日はありませんでした',
-      subtitle: lines.filter(Boolean).join('\n'),
+    const periodLabel = `${DateUtils.formatDate(first, 'M/d')}〜${DateUtils.formatDate(to, 'M/d')}`;
+    LineManager.replyFlex(replyToken, `休暇を登録しました（${periodLabel}）`, FlexCards.leaveRange({
+      periodLabel,
+      days,
+      notes: notes.filter(Boolean),
     }));
   };
 

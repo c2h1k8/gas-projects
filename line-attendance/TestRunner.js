@@ -178,6 +178,13 @@ function test_postback_カレンダー休暇() {
   _teardownTest_();
 }
 
+/** テスト: 休暇の結果カードの「〜まで続けて休む」（7/22の翌日〜7/28。土日を含む） */
+function test_postback_続けて休む() {
+  _setupTest_();
+  _runPostback_({ action: 'leave-range', from: '2026-07-22' }, { date: '2026-07-28' });
+  _teardownTest_();
+}
+
 /** テスト: 1日カードから退社時刻を登録（同じ1日カードへ戻る） */
 function test_postback_1日カード_退社入力() {
   _setupTest_();
