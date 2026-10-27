@@ -130,6 +130,65 @@ const FlexCards = (() => {
     },
 
     /**
+     * 「〜まで続けて休む」の結果カード（期間の日ごとの区分と日数の内訳）。
+     * @param {{periodLabel, days, notes}} p
+     *   periodLabel: ヘッダーに出す期間（例: '10/29〜11/5'）
+     *   days: [{ label, type, status }]（日付昇順）。status: 'ok' | 'reserved' | 'holiday' | 'failed'
+     *     typeは登録した勤怠区分（status='ok' | 'reserved' のときのみ参照）
+     *   notes: 末尾に添える補足（有休残・書き出し失敗など）。空可。
+     */
+    leaveRange: ({ periodLabel, days, notes }) => {
+      const registered = days.filter((d) => d.status === 'ok' || d.status === 'reserved');
+      const headerColor = registered.length ? colorOf(registered[0].type) : GRAY;
+      const body = [];
+
+      // 日数の内訳（区分ごと＋休日・登録できなかった日）
+      const counts = new Map();
+      const countUp = (key, color) => {
+        const c = counts.get(key) || { n: 0, color };
+        c.n++;
+        counts.set(key, c);
+      };
+      days.forEach((d) => {
+        if (d.status === 'holiday') countUp('休日', GRAY);
+        else if (d.status === 'failed') countUp('登録不可', WARN);
+        else countUp(d.type, colorOf(d.type));
+      });
+      body.push({
+        type: 'box', layout: 'horizontal',
+        contents: [...counts].map(([k, c]) => metric(k, `${c.n}日`, c.color)),
+      });
+      body.push(sep());
+
+      // 日ごとの一覧（最大でも2週間分なので全件並べる）
+      days.forEach((d, i) => {
+        let value;
+        let color;
+        if (d.status === 'holiday') [value, color] = ['休日', GRAY];
+        else if (d.status === 'failed') [value, color] = ['登録できませんでした', WARN];
+        else [value, color] = [d.status === 'reserved' ? `${d.type}（予約）` : d.type, colorOf(d.type)];
+        const dim = d.status === 'holiday';
+        body.push({
+          type: 'box', layout: 'horizontal', margin: i > 0 ? 'sm' : 'md',
+          contents: [
+            text(d.label, { size: 'sm', color: dim ? GRAY : DARK, weight: dim ? 'regular' : 'bold', flex: 4 }),
+            text(value, { size: 'sm', color, weight: dim ? 'regular' : 'bold', align: 'end', flex: 6, wrap: true }),
+          ],
+        });
+      });
+
+      if (notes && notes.length) {
+        body.push(sep());
+        notes.forEach((n, i) => body.push(text(n, { size: 'xs', color: GRAY, align: 'center', wrap: true, margin: i > 0 ? 'sm' : 'md' })));
+      }
+
+      return shell(headerColor, [
+        text(registered.length ? '休暇を登録' : '登録なし', { color: '#FFFFFF', weight: 'bold', size: 'lg', flex: 0 }),
+        text(periodLabel, { color: '#FFFFFF', size: 'sm', align: 'end', gravity: 'center' }),
+      ], body);
+    },
+
+    /**
      * 稼働一覧カード。
      * @param {{title, total, overtime, overtimeSite, forecast, days, rows}} p
      *   overtime＝会社の残業（丸め前）、overtimeSite＝現場の残業（丸め後）。
