@@ -1510,11 +1510,24 @@ const MainProc = (function () {
     // 休憩は工数の差し引き分なので、同じ範囲から一緒に読んでカードに添える。
     let kosu = '';
     let restNow = shouldUpdRest ? rest : '';
+    let restPrompt = null;
     if (isWorking && shouldUpdEnd) {
       const from = COLUMN_META.DIFF.NO;
       const cols = sheet.getRange(rowNo, from, 1, COLUMN_META.BREAK.NO - from + 1).getValues()[0];
-      kosu = convertMinutes2Hour(convertHour2Minutes(getTime(cols[0])));
+      const diffMin = convertHour2Minutes(getTime(cols[0]));
+      kosu = convertMinutes2Hour(diffMin);
       restNow = getTime(cols[COLUMN_META.BREAK.NO - from]) || '';
+      // 早退した日は休憩を取っていないことがあるので、所定に届かず休憩が入ったままなら見直しを促す。
+      // 判定は勤務表の実働（丸め後）で行う。休日出勤も休憩の付け忘れは同じなので対象にする。
+      // 今回休憩を指定した登録では、確認済みとみなして促さない。
+      if (!shouldUpdRest && diffMin < STD_WORK_MIN
+        && restNow && convertHour2Minutes(restNow) > 0) {
+        restPrompt = {
+          message: `実働が所定の${convertMinutes2Hour(STD_WORK_MIN)}に届いていません。休憩を取らなかった場合は休憩時間を直してください。`,
+          data: { action: 'fill-punch', date: DateUtils.formatDate(date, 'yyyy-MM-dd'), field: 'rest', single: 1 },
+          initial: restNow,
+        };
+      }
     }
     // 登録内容を書き出す（カードに結果を載せるため返信前に行う）
     const exportNote = exportRow_(date, type);
@@ -1527,6 +1540,7 @@ const MainProc = (function () {
         start: isWorking ? start : '',
         end: (isWorking && shouldUpdEnd) ? end : '',
         rest: isWorking ? restNow : '',
+        restPrompt,
         kosu,
         summary: shouldUpdEnd ? getMonthSummaryData(date) : null,
         // 有給・欠勤は登録後の有休残を添える。書き出しに失敗したらそれも添える。
@@ -2146,7 +2160,10 @@ const MainProc = (function () {
    * @param params 時刻選択の結果（{ time: 'HH:mm' }。restは時刻ではなく長さとして扱う）
    */
   const executeFillPunch = (replyToken, data, params) => {
-    if (!params || !params.time) return;
+    // 時刻ピッカー以外（「休憩なし」ボタン）は時刻をデータに持たせて送る
+    const time = (params && params.time) || data.time;
+    if (!time) return;
+    params = { time };
     const date = Utilities.parseDate(data.date, 'JST', 'yyyy-MM-dd');
     const field = data.field;
     const updated = updateTime(replyToken, {

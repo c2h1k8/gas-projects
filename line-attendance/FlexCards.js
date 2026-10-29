@@ -72,12 +72,13 @@ const FlexCards = (() => {
      * 打刻結果カード。
      * @param {{dateLabel, type, start, end, rest, kosu, summary, note}} p
      *   rest: 休憩時間。工数の内訳として添える。null可。
+     *   restPrompt: 休憩の見直しを促す案内と休憩の時刻ピッカー { message, data, initial }。null可。
      *   summary: { total, overtime, overtimeSite, forecast } いずれも文字列でnull可（nullの項目は出さない）。summary自体null可。
      *     overtime＝会社の残業（丸め前）、overtimeSite＝現場の残業（丸め後）。
      *   note: 末尾に添える補足（有休残など）。null可。
      *   picker: 末尾に添える日付ピッカーボタン（datePickerButtonの引数）。null可。
      */
-    punch: ({ dateLabel, type, start, end, rest, kosu, summary, note, picker }) => {
+    punch: ({ dateLabel, type, start, end, rest, restPrompt, kosu, summary, note, picker }) => {
       const c = colorOf(type);
       const body = [];
 
@@ -101,6 +102,31 @@ const FlexCards = (() => {
       // 休憩は工数の差し引き分なので、工数のすぐ下に内訳として置く
       if (rest) {
         body.push(text(`休憩 ${rest}`, { size: 'xs', color: GRAY, align: 'center' }));
+      }
+      // 所定に届かない日は、休憩を取っていない可能性があるのでその場で直せるようにする
+      if (restPrompt) {
+        body.push(text(restPrompt.message, { size: 'xs', color: WARN, align: 'center', wrap: true, margin: 'md' }));
+        // 早退で休憩を取らなかった日が主な想定なので、0:00はワンタップで入れられるようにする
+        body.push({
+          type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm',
+          contents: [
+            {
+              type: 'button', height: 'sm', flex: 1, style: 'primary', color: WARN,
+              action: {
+                type: 'postback', label: '休憩なし', displayText: '休憩なし',
+                data: JSON.stringify(Object.assign({}, restPrompt.data, { time: '00:00' })),
+              },
+            },
+            {
+              type: 'button', height: 'sm', flex: 1, style: 'secondary',
+              action: {
+                type: 'datetimepicker', label: '時間を指定', mode: 'time',
+                data: JSON.stringify(restPrompt.data),
+                initial: restPrompt.initial, min: '00:00', max: '23:59',
+              },
+            },
+          ],
+        });
       }
       if (!times.length && !kosu) {
         body.push(text('登録しました', { size: 'md', color: DARK, align: 'center' }));
