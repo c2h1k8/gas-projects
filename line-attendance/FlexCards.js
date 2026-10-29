@@ -70,7 +70,8 @@ const FlexCards = (() => {
   return {
     /**
      * 打刻結果カード。
-     * @param {{dateLabel, type, start, end, rest, kosu, summary, note}} p
+     * @param {{dateLabel, type, title, start, end, rest, kosu, summary, note}} p
+     *   title: ヘッダーの見出し。省略時はtype（色は常にtypeで決める）。
      *   rest: 休憩時間。工数の内訳として添える。null可。
      *   restPrompt: 休憩の見直しを促す案内と休憩の時刻ピッカー { message, data, initial }。null可。
      *   summary: { total, overtime, overtimeSite, forecast } いずれも文字列でnull可（nullの項目は出さない）。summary自体null可。
@@ -78,7 +79,7 @@ const FlexCards = (() => {
      *   note: 末尾に添える補足（有休残など）。null可。
      *   picker: 末尾に添える日付ピッカーボタン（datePickerButtonの引数）。null可。
      */
-    punch: ({ dateLabel, type, start, end, rest, restPrompt, kosu, summary, note, picker }) => {
+    punch: ({ dateLabel, type, title, start, end, rest, restPrompt, kosu, summary, note, picker }) => {
       const c = colorOf(type);
       const body = [];
 
@@ -150,7 +151,7 @@ const FlexCards = (() => {
       if (picker) body.push(datePickerButton(picker));
 
       return shell(c, [
-        text(type, { color: '#FFFFFF', weight: 'bold', size: 'lg', flex: 0 }),
+        text(title || type, { color: '#FFFFFF', weight: 'bold', size: 'lg', flex: 0 }),
         text(dateLabel, { color: '#FFFFFF', size: 'sm', align: 'end', gravity: 'center' }),
       ], body);
     },
@@ -419,13 +420,15 @@ const FlexCards = (() => {
       if (subtitle) body.push(text(subtitle, { size: 'sm', color: GRAY, align: 'center' }));
       body.push(sep());
       entries.forEach((e, i) => {
+        // 1日カードは登録後も出すため、両方そろった状態もありうる
         const lack = (e.needStart && e.needEnd) ? '出社・退社が未登録'
-          : (e.needStart ? '出社が未登録' : '退社が未登録');
+          : e.needStart ? '出社が未登録'
+          : e.needEnd ? '退社が未登録' : '登録済み';
         body.push({
           type: 'box', layout: 'horizontal', margin: i > 0 ? 'lg' : 'md', alignItems: 'center',
           contents: [
             text(e.label, { size: 'sm', color: DARK, weight: 'bold', flex: 4 }),
-            text(lack, { size: 'xs', color: WARN, align: 'end', flex: 6 }),
+            text(lack, { size: 'xs', color: (e.needStart || e.needEnd) ? WARN : GRAY, align: 'end', flex: 6 }),
           ],
         });
         body.push({
