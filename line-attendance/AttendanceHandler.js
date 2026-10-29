@@ -1531,12 +1531,20 @@ const MainProc = (function () {
     }
     // 登録内容を書き出す（カードに結果を載せるため返信前に行う）
     const exportNote = exportRow_(date, type);
+    // 稼働日の見出しは区分（出勤）ではなく今回登録したもの（出社/退社/休憩）にする。
+    // 休日出勤は区分も伝わるよう前に添える。
+    let title = cardType;
+    if (isWorking) {
+      const what = shouldUpdEnd ? '退社' : startProvided ? '出社' : '休憩';
+      title = type === TYPE.HOLIDAY_WORKING ? `${type} ${what}` : what;
+    }
     // 打刻カードは常に組み立てる（reply=falseの呼び出し元は自前のカードと並べて返すため）
     const punchCard = {
-      altText: `${cardType} 登録`,
+      altText: `${title} 登録`,
       contents: FlexCards.punch({
         dateLabel: DateUtils.formatDate(date, 'M/d(aaa)'),
         type: cardType,
+        title,
         start: isWorking ? start : '',
         end: (isWorking && shouldUpdEnd) ? end : '',
         rest: isWorking ? restNow : '',
@@ -2176,11 +2184,12 @@ const MainProc = (function () {
     // 中断時はupdateTimeが理由を返信済み
     if (!updated) return;
 
-    // 1日カードは時刻の修正にも使うため常に添える。
-    // 一覧は残りが無くなったら省略し、打刻カードだけで完結させる。
+    // 1日カード・一覧とも、未登録が残っているときだけ続けて入力できるよう添える。
+    // 埋まったら打刻カードだけで完結させる（時刻の修正はカレンダー登録から開き直せる）。
     let followUp = null;
     if (data.single) {
-      followUp = buildDayPunchCard_(replyToken, data.date);
+      const punch = getPunchLog().get(data.date) || { start: false, end: false };
+      if (!punch.start || !punch.end) followUp = buildDayPunchCard_(replyToken, data.date);
     } else {
       const entries = collectUnregistered_();
       if (entries && entries.length) followUp = buildUnregisteredCard_(entries);
